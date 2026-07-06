@@ -35,6 +35,10 @@ htmlcov/
 trace.jsonl
 *.log
 
+# --- SCPC 산출물 / 보관용 중복본 ---
+submission.csv
+docs/_archive/
+
 # --- Editor / OS junk ---
 .vscode/
 .idea/
