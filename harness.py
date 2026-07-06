@@ -257,7 +257,7 @@ class FinalHarness:
         target = self.infer_target(task, focal, session, evidence)
         control = self.decide_control(task, focal, target, evidence)
         content_scope = self.build_content_scope(task, focal, control, evidence)
-        policy = self.build_policy(task, focal, control, evidence)
+        policy = self.build_policy(task, focal, control, evidence, target)
         plan_events = self.build_plan_events(task, focal_id, target, control, content_scope, policy)
 
         session["last_focal_id"] = focal_id
@@ -434,7 +434,8 @@ class FinalHarness:
         # 5) 확인이 필요한 변경/불일치 신호.
         if "confirmation" in str(rec.get("payment_policy", "")):
             return "ask"
-        if "원본, 익명 요약" in str(task.get("prompt", "")) and "local_update" in str(rec.get("share_boundary_update", "")):
+        prompt = str(task.get("prompt", ""))
+        if "원본" in prompt and "익명" in prompt and "local_update" in str(rec.get("share_boundary_update", "")):
             return "proceed"
         if "target_changed_after_turn" in rec:
             return "ask"
@@ -499,7 +500,8 @@ class FinalHarness:
             return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": ["raw_quote"], "requires_user_confirmation": True}
         if control == "amend":
             excluded = self.sensitive_fields_of(focal)
-            return {"mode": "redacted", "allowed_fields": ["summary"], "excluded_fields": excluded or ["raw_quote"], "requires_user_confirmation": False}
+            ambiguous = "ambiguous_target" in rec or "ambiguous_focal" in rec
+            return {"mode": "redacted", "allowed_fields": ["summary"], "excluded_fields": excluded or ["raw_quote"], "requires_user_confirmation": ambiguous}
 
         # proceed
         target_is_local = "persistent_memory_write" in rec or clause_kind(task) == "local"
@@ -510,8 +512,9 @@ class FinalHarness:
             return {"mode": "raw", "allowed_fields": ["summary", "title"], "excluded_fields": [], "requires_user_confirmation": False}
         return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": [], "requires_user_confirmation": False}
 
-    def build_policy(self, task: dict[str, Any], focal: dict[str, Any], control: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    def build_policy(self, task: dict[str, Any], focal: dict[str, Any], control: str, evidence: dict[str, Any], target: str = "") -> dict[str, Any]:
         rec = record_map(records_of(task))
+        kind = clause_kind(task)
         flags: set[str] = set()
 
         if str(rec.get("session_share_policy", "")) == "strict":
@@ -522,10 +525,16 @@ class FinalHarness:
             flags.add("ambiguous_focal")
         if self.sensitive_fields_of(focal):
             flags.add("sensitive_content")
-        if "external" in str(rec.get("route_candidate_snapshot", "")):
+        # 외부 목적지로 향하는 요청이면 외부 공유 위험이 있다.
+        if target and target not in ("memory_store", "user"):
             flags.add("external_share")
-        if clause_kind(task) == "local":
+        # 공유 경계가 갱신된 흐름은 전제가 바뀐 것이다.
+        if "share_boundary_update" in rec:
             flags.add("precondition_changed")
+        # 최신 정정/경계로 로컬 처리 범위가 걸린 흐름.
+        if kind in ("local", "stop", "confirm") or "persistent_memory_write" in rec \
+                or str(rec.get("share_boundary_update", "")).startswith("local_update"):
+            flags.add("local_only")
 
         if control == "hold":
             flags.update(("precondition_invalidated", "safety"))
@@ -533,10 +542,6 @@ class FinalHarness:
             flags.add("clarification_required")
         elif control == "amend":
             flags.update(("external_share", "minimal_disclosure"))
-        elif control == "proceed":
-            if "persistent_memory_write" in rec or clause_kind(task) == "local" \
-                    or str(rec.get("share_boundary_update", "")).startswith("local_update"):
-                flags.add("local_only")
 
         violations = ["precondition_changed_ignored"] if control == "hold" else []
         return {
@@ -591,9 +596,11 @@ class FinalHarness:
 
     def user_response(self, control: str, target: str, scope: dict[str, Any], policy: dict[str, Any]) -> str:
         if control == "hold":
-            return "보안, 동의 또는 정책 조건 때문에 진행하지 않겠습니다."
+            return "최신 보안·동의·정책 신호로 처리 전제가 무효화되어 이 요청은 보류합니다."
         if control == "ask":
-            return "대상이나 허용 범위를 한 번 더 확인해야 합니다."
+            return "대상 또는 허용 범위가 확정되지 않아 진행 전에 사용자 확인이 필요합니다."
         if control == "amend":
-            return f"민감 정보를 제외하고 {target}(으)로 진행하겠습니다."
-        return f"요청한 범위로 {target}(으)로 진행하겠습니다."
+            return f"민감 정보를 제외한 요약만 {target}(으)로 전달합니다."
+        if scope.get("mode") == "status_only":
+            return "외부로 보내지 않고 기기 내부 상태만 업데이트합니다."
+        return f"요청 범위 그대로 {target}(으)로 진행합니다."
