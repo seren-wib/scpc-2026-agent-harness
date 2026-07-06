@@ -87,10 +87,12 @@ def object_text(obj: dict[str, Any]) -> str:
     ]).lower()
 
 
-WM_CODE = re.compile(r"WM-\d+")
-FOCAL_POS = ("확정", "승인", "우선", "처리 대상", "기준 참조", "최종")
-FOCAL_NEG = ("보류", "제외", "무시", "취소")
-ORDINALS = {"첫": 0, "두": 1, "세": 2, "네": 3, "다섯": 4}
+# dev는 WM-#### 형식이지만 접두사가 바뀌어도 살아남도록 일반화한다.
+# 주의: 한글 조사가 붙으면(\"WM-9921로\") \b가 성립하지 않으므로 경계 표식은 쓰지 않는다.
+WM_CODE = re.compile(r"[A-Z]{2,4}-\d{3,6}")
+FOCAL_POS = ("확정", "승인", "우선", "처리 대상", "기준 참조", "기준", "최종", "선택", "유효")
+FOCAL_NEG = ("보류", "제외", "무시", "취소", "금지", "폐기", "아니")
+ORDINALS = {"첫": 0, "두": 1, "세": 2, "네": 3, "다섯": 4, "여섯": 5, "일곱": 6}
 
 
 def resolve_focal_by_marker(task: dict[str, Any]) -> dict[str, Any] | None:
@@ -162,29 +164,36 @@ def score_codes_in_summary(summary: str) -> dict[str, float]:
 
 
 # "단, ..." 꼬리 정정 구절: 가장 최신 지시라서 target/control을 동시에 결정한다.
-CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "로컬 상태", "내부 상태", "내부 업데이트",
-                "기기 안", "장치 안", "공유하지 말", "보내지 말", "전달 대신", "전달 동작은 취소")
-CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안")
+CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "상태만 남", "상태 기록", "기록으로만",
+                "로컬 상태", "내부 상태", "내부 업데이트", "내부에서만", "갱신만",
+                "기기 안", "장치 안", "공유하지 말", "보내지 말", "전송하지 말", "내보내지 말",
+                "전달 대신", "전달 동작은 취소", "외부로 보내")
+CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안",
+               "중단해야", "진행 불가", "해서는 안", "하지 마라")
 CLAUSE_CONFIRM = ("사용자에게 먼저 확인", "다시 확인", "먼저 확인", "확인해야 한다", "확인 전에는",
-                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없")
-CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외")
+                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없",
+                  "재확인", "여부를 확인", "확실하지 않", "불명확", "판단할 수 없")
+CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외", "식별 정보 제외", "민감한 값 제외")
+
+CLAUSE_MARKERS = ("단,", "다만,")
+RECENCY_MARKS = ("가장 최신", "마지막", "최신 정정", "방금")
 
 
-def final_clause(task: dict[str, Any]) -> str:
-    """prompt(현재 발화) 우선, 없으면 최신 history에서 '단,' 꼬리 구절을 찾는다."""
+def clause_candidates(task: dict[str, Any]):
+    """정정 구절 후보를 신뢰도 순으로 생성: '단,' 계열 표지 → 최신성 표지가 붙은 문장."""
     sources = [str(task.get("prompt", ""))]
     sources += [str((h or {}).get("summary", "")) for h in reversed(task.get("visible_history") or [])]
     for src in sources:
-        i = src.rfind("단,")
+        i = max(src.rfind(m) for m in CLAUSE_MARKERS)
         if i >= 0:
-            return src[i:]
-    return ""
+            yield src[i:]
+    for src in sources:
+        for sent in reversed(src.split(".")):
+            if any(w in sent for w in RECENCY_MARKS):
+                yield sent
 
 
-def clause_kind(task: dict[str, Any]) -> str | None:
-    clause = final_clause(task)
-    if not clause:
-        return None
+def _kind_of(clause: str) -> str | None:
     if any(k in clause for k in CLAUSE_LOCAL):
         return "local"
     if any(k in clause for k in CLAUSE_STOP):
@@ -193,6 +202,14 @@ def clause_kind(task: dict[str, Any]) -> str | None:
         return "scope"
     if any(k in clause for k in CLAUSE_CONFIRM):
         return "confirm"
+    return None
+
+
+def clause_kind(task: dict[str, Any]) -> str | None:
+    for clause in clause_candidates(task):
+        kind = _kind_of(clause)
+        if kind:
+            return kind
     return None
 
 
@@ -208,11 +225,11 @@ def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
     if "enterprise_policy_recall" in rec:
         return "approval_channel"
     prompt = str(task.get("prompt", ""))
-    if any(k in prompt for k in ("조명", "공간", "조도", "불을")):
+    if any(k in prompt for k in ("조명", "공간", "조도", "불을", "전등", "불빛", "밝기")):
         return "dusk_room"
-    if any(k in prompt for k in ("검진", "점검", "건강", "복약", "처방")):
+    if any(k in prompt for k in ("검진", "점검", "건강", "복약", "처방", "병원", "진료", "클리닉")):
         return "health_channel"
-    if "승인" in prompt:
+    if "승인" in prompt or "결재" in prompt:
         return "approval_channel"
     return "preferred_channel"
 
@@ -224,6 +241,7 @@ MEMORY_FIELD_DEFAULTS = {"dusk_room": "living_room", "health_channel": "caregive
 def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
     """visible_history에서 확정/승인된 ref_code를 찾아 해당 object 반환 (최신 항목 우선)."""
     by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
+    fallback: dict[str, Any] | None = None
     for item in reversed(task.get("visible_history") or []):
         summary = str((item or {}).get("summary", ""))
         scores = score_codes_in_summary(summary)
@@ -235,7 +253,10 @@ def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
             return by_ref[best]
         if len(cands) == 1:
             return by_ref[cands[0]]
-    return None
+        # 판정 불가 요약이라도 최신 요약의 최고점 후보는 기억해 둔다 (양성 판정이 없을 때의 폴백).
+        if fallback is None and scores[best] >= 0:
+            fallback = by_ref[best]
+    return fallback
 
 
 class FinalHarness:
