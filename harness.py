@@ -249,8 +249,14 @@ CLAUSE_MARKERS = ("단,", "다만,")
 
 def final_clause(task: dict[str, Any]) -> str:
     """prompt(현재 발화) 우선, 없으면 최신 history에서 '단,' 꼬리 구절을 찾는다."""
+    # 꼬리 정정은 '가장 최신 지시'일 때만 유효하다: prompt와 최신 turn의 history만 본다.
+    # 옛 턴의 절이 현재 턴을 납치하면 안 된다 (최신 record가 과거를 덮는 원칙의 절 버전).
+    ordered = history_in_turn_order(task)
+    turns = [h.get("turn") for h in ordered if isinstance(h, dict) and isinstance(h.get("turn"), (int, float))]
+    newest = max(turns) if turns else None
+    recent = [h for h in ordered if newest is None or (isinstance(h, dict) and h.get("turn") == newest)]
     sources = [str(task.get("prompt", ""))]
-    sources += [str((h or {}).get("summary", "")) for h in reversed(history_in_turn_order(task))]
+    sources += [str((h or {}).get("summary", "")) for h in reversed(recent)]
     for src in sources:
         i = max(src.rfind(m) for m in CLAUSE_MARKERS)
         if i >= 0:
