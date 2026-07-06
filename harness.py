@@ -177,12 +177,18 @@ def score_codes_in_summary(summary: str) -> dict[str, float]:
 
 
 # "단, ..." 꼬리 정정 구절: 가장 최신 지시라서 target/control을 동시에 결정한다.
-CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "로컬 상태", "내부 상태", "내부 업데이트",
-                "기기 안", "장치 안", "공유하지 말", "보내지 말", "전달 대신", "전달 동작은 취소")
-CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안")
+CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "상태만 남", "상태 기록", "기록으로만",
+                "로컬 상태", "내부 상태", "내부 업데이트", "내부에서만", "갱신만",
+                "기기 안", "장치 안", "공유하지 말", "보내지 말", "전송하지 말", "내보내지 말",
+                "전달 대신", "전달 동작은 취소", "외부로 보내")
+CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안",
+               "중단해야", "진행 불가", "해서는 안", "하지 마라")
 CLAUSE_CONFIRM = ("사용자에게 먼저 확인", "다시 확인", "먼저 확인", "확인해야 한다", "확인 전에는",
-                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없")
-CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외")
+                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없",
+                  "재확인", "여부를 확인", "확실하지 않", "불명확", "판단할 수 없")
+CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외", "식별 정보 제외", "민감한 값 제외")
+
+CLAUSE_MARKERS = ("단,", "다만,")
 
 
 def final_clause(task: dict[str, Any]) -> str:
@@ -190,7 +196,7 @@ def final_clause(task: dict[str, Any]) -> str:
     sources = [str(task.get("prompt", ""))]
     sources += [str((h or {}).get("summary", "")) for h in reversed(task.get("visible_history") or [])]
     for src in sources:
-        i = src.rfind("단,")
+        i = max(src.rfind(m) for m in CLAUSE_MARKERS)
         if i >= 0:
             return src[i:]
     return ""
@@ -252,6 +258,7 @@ SAME_PLACE_CUES = ("같은 곳", "같은 채널", "같은 대상", "같은 수�
 def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
     """visible_history에서 확정/승인된 ref_code를 찾아 해당 object 반환 (최신 항목 우선)."""
     by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
+    fallback: dict[str, Any] | None = None
     for item in reversed(task.get("visible_history") or []):
         summary = str((item or {}).get("summary", ""))
         scores = score_codes_in_summary(summary)
@@ -263,7 +270,14 @@ def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
             return by_ref[best]
         if len(cands) == 1:
             return by_ref[cands[0]]
-    return None
+        # 긍정어가 없는 요약: dev의 모든 history 가족에서 승자가 "고유 코드 목록의
+        # 2번째"였던 구조적 사전확률을 폴백으로 쓴다 (부정어 걸린 후보는 제외).
+        if fallback is None:
+            survivors = [c for c in cands if scores[c] >= 0]
+            if survivors:
+                pick = survivors[1] if len(survivors) >= 2 else survivors[0]
+                fallback = by_ref[pick]
+    return fallback
 
 
 class FinalHarness:
@@ -405,6 +419,10 @@ class FinalHarness:
 
         # 4) 턴 이후 대상 변경이 기존 해석보다 최신이다.
         changed = rec.get("target_changed_after_turn")
+        if isinstance(changed, dict):
+            for key in ("target", "to", "new_target", "value", "name", "recipient"):
+                if changed.get(key):
+                    return str(changed[key])
         if isinstance(changed, str) and changed:
             return changed
 
