@@ -355,6 +355,23 @@ def resolve_focal_by_history(task: dict[str, Any], session: dict[str, Any] | Non
                     if any(k in prompt for k in keywords):
                         typed = [c for c in survivors if str(by_ref[c].get("type")) == obj_type]
                         break
+                # E) 지목이 산문이 아니라 후보 object의 상태값에 있을 수 있다.
+                attr_pos = FOCAL_POS + ("confirmed", "approved", "selected", "primary")
+                attr_neg = FOCAL_NEG + ("pending", "held", "cancelled", "archived", "stale")
+                attr_scored = sorted(
+                    ((sum(1 for p in attr_pos if p in object_text(by_ref[c]))
+                      - sum(1 for n in attr_neg if n in object_text(by_ref[c])), c) for c in survivors),
+                    key=lambda x: -x[0])
+                attr_pick = [c for s, c in attr_scored if s > 0 and s == attr_scored[0][0]]
+                # F) record 값이 후보의 attrs(수신처/스레드 등)를 메아리치면 그 후보가 지목이다.
+                rec_text = " ".join(text_of(r.get("value")) for r in records_of(task)).lower()
+                echo_scored = []
+                for c in survivors:
+                    vals = [str(v).lower() for v in (by_ref[c].get("attrs") or {}).values()
+                            if isinstance(v, str) and len(v) >= 3 and v.lower() not in ("me",)]
+                    echo_scored.append((sum(1 for v in set(vals) if v in rec_text), c))
+                echo_scored.sort(key=lambda x: -x[0])
+                echo_pick = [c for s, c in echo_scored if s > 0 and s == echo_scored[0][0]]
                 last_id = str((session or {}).get("last_focal_id") or "")
                 carried = [c for c in survivors if last_id and str(by_ref[c].get("id")) == last_id]
                 token_pick: list[str] = []
@@ -365,7 +382,11 @@ def resolve_focal_by_history(task: dict[str, Any], session: dict[str, Any] | Non
                     second = sum(1 for tok in prompt_tokens if tok in object_text(by_ref[ranked[1]])) if len(ranked) >= 2 else -1
                     if top_score > max(second, 0):
                         token_pick = [ranked[0]]
-                if len(typed) == 1:
+                if len(attr_pick) == 1:
+                    fallback = by_ref[attr_pick[0]]
+                elif len(echo_pick) == 1:
+                    fallback = by_ref[echo_pick[0]]
+                elif len(typed) == 1:
                     fallback = by_ref[typed[0]]
                 elif carried:
                     fallback = by_ref[carried[0]]
