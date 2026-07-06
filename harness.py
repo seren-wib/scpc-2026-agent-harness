@@ -392,14 +392,62 @@ class FinalHarness:
         if kind == "confirm":
             return "ask"
 
-        # TODO: 단일 record label만 보지 말고 prompt, focal object, session 상태를 함께 보강하세요.
-        if "security_alert" in types or "phishing" in flags or "safety_mode" in types or "privacy_guard" in types:
+        rec = record_map(records)
+
+        # 1) 안전/동의 계열은 무조건 중단.
+        if "security_alert" in types or "phishing" in flags:
             return "hold"
-        if "consent" in types and any(word in values for word in ["revoked", "withdraw", "denied", "철회", "거부"]):
+        safety = str(rec.get("safety_mode", ""))
+        if safety and safety not in ("off", "inactive", "normal"):
             return "hold"
-        if evidence.get("requires_confirmation") or any(t in types for t in ["ambiguous_target", "ambiguous_focal", "duration_ambiguous", "memory_conflict", "amount_changed", "merchant_verification", "routine_scope"]):
+        consent = rec.get("consent")
+        consent_status = str(consent.get("status", "")) if isinstance(consent, dict) else str(consent or "")
+        if any(w in consent_status for w in ("revoked", "withdraw", "denied", "철회", "거부")):
+            return "hold"
+        if any(w in values for w in ("revoked", "철회")):
+            return "hold"
+
+        # 2) 건강 원문 등 외부 공유 자체가 금지된 경우 중단.
+        forbid = str(rec.get("external_share_policy", "")) + " " + str(rec.get("health_share_policy", ""))
+        if "doctor_note" in forbid or "health" in forbid and "forbidden" in forbid:
+            return "hold"
+
+        # 3) 메모리 기록 요청은 그대로 진행.
+        if "persistent_memory_write" in rec:
+            return "proceed"
+
+        # 4) 저장 프로필과의 충돌: 기피 항목 위반은 중단, 취향 반전은 확인.
+        recall = rec.get("persistent_memory_recall")
+        if isinstance(recall, dict):
+            profile = self.memory.get(str(recall.get("memory_key"))) or self.memory.get(str(recall.get("person")))
+            prompt = str(task.get("prompt", ""))
+            if isinstance(profile, dict) and profile.get("avoid") and str(profile["avoid"]) in prompt:
+                return "hold"
+            if "반대" in prompt or "다른 말투" in prompt:
+                return "ask"
+
+        # 5) 확인이 필요한 변경/불일치 신호.
+        if "target_changed_after_turn" in rec:
             return "ask"
-        if evidence.get("requires_redaction") or any(t in types for t in ["external_share_policy", "share_scope", "payment_policy", "enterprise_policy_recall"]):
+        if any(t in types for t in ("amount_changed", "merchant_verification", "memory_conflict", "duration_ambiguous")):
+            return "ask"
+
+        # 6) 모호성: route/authority record가 해소했으면 넘어가고, 아니면 확인/중단.
+        snapshot = str(rec.get("route_candidate_snapshot", ""))
+        authority = str(rec.get("dispatch_authority_check", ""))
+        ambiguous = "ambiguous_target" in rec or "ambiguous_focal" in rec
+        resolved = "single" in snapshot or "confirmed" in authority
+        if ambiguous and not resolved:
+            if "blocked" in authority or "pending" in authority:
+                return "hold"
+            return "ask"
+
+        # 7) 축소 진행 신호: 원문 금지, 과거 작업/규정 recall, 엄격 공유 정책.
+        if "forbidden" in forbid or "summary_only" in forbid:
+            return "amend"
+        if "ops_memory_recall" in rec or "enterprise_policy_recall" in rec:
+            return "amend"
+        if str(rec.get("session_share_policy", "")) == "strict":
             return "amend"
         return "proceed"
 
