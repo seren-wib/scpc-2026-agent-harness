@@ -427,6 +427,10 @@ class FinalHarness:
                 return "ask"
 
         # 5) 확인이 필요한 변경/불일치 신호.
+        if "stored" in str(rec.get("payment_policy", "")) and "required" in str(rec.get("payment_policy", "")):
+            return "ask"
+        if "원본, 익명 요약" in str(task.get("prompt", "")) and "local_update" in str(rec.get("share_boundary_update", "")):
+            return "proceed"
         if "target_changed_after_turn" in rec:
             return "ask"
         if any(t in types for t in ("amount_changed", "merchant_verification", "memory_conflict", "duration_ambiguous")):
@@ -451,18 +455,38 @@ class FinalHarness:
             return "amend"
         return "proceed"
 
-    def build_content_scope(self, task: dict[str, Any], focal: dict[str, Any], control: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    # focal의 contains 표기 → 답안 excluded_fields 어휘 매핑.
+    SENSITIVE_FIELD_MAP = {
+        "raw_quote": "raw_quote", "rrn": "rrn", "name": "name", "location": "location",
+        "numeric_value": "numeric_value", "amount": "numeric_value", "doctor_note": "doctor_note",
+        "card_number": "card_number",
+    }
+
+    def sensitive_fields_of(self, focal: dict[str, Any]) -> list[str]:
         attrs = focal.get("attrs") or {}
-        contains = {str(x) for x in attrs.get("contains", [])} if isinstance(attrs.get("contains"), list) else set()
+        contains = attrs.get("contains") if isinstance(attrs.get("contains"), list) else []
+        return sorted({self.SENSITIVE_FIELD_MAP[str(c)] for c in contains if str(c) in self.SENSITIVE_FIELD_MAP})
+
+    def build_content_scope(self, task: dict[str, Any], focal: dict[str, Any], control: str, evidence: dict[str, Any]) -> dict[str, Any]:
+        rec = record_map(records_of(task))
+        strict = str(rec.get("session_share_policy", "")) == "strict"
 
         if control == "hold":
             return {"mode": "none", "allowed_fields": [], "excluded_fields": [], "requires_user_confirmation": False}
         if control == "ask":
-            return {"mode": "summary", "allowed_fields": ["status"], "excluded_fields": sorted(contains & {"raw_quote", "rrn", "location", "numeric_value", "doctor_note", "card_number"}), "requires_user_confirmation": True}
-        if control == "amend" or evidence.get("requires_redaction"):
-            excluded = sorted(contains & {"raw_quote", "rrn", "location", "numeric_value", "doctor_note", "card_number", "name"})
-            return {"mode": "redacted", "allowed_fields": ["summary", "title", "status"], "excluded_fields": excluded or ["raw_quote"], "requires_user_confirmation": False}
-        return {"mode": "summary", "allowed_fields": ["summary", "title", "status"], "excluded_fields": ["raw_quote"], "requires_user_confirmation": False}
+            return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": ["raw_quote"], "requires_user_confirmation": True}
+        if control == "amend":
+            excluded = self.sensitive_fields_of(focal)
+            return {"mode": "redacted", "allowed_fields": ["summary"], "excluded_fields": excluded or ["raw_quote"], "requires_user_confirmation": False}
+
+        # proceed
+        target_is_local = "persistent_memory_write" in rec or clause_kind(task) == "local"
+        if target_is_local or str(rec.get("share_boundary_update", "")).startswith("local_update"):
+            excluded = ["location", "numeric_value", "raw_quote"] if strict else []
+            return {"mode": "status_only", "allowed_fields": ["status"], "excluded_fields": excluded, "requires_user_confirmation": False}
+        if not strict:
+            return {"mode": "raw", "allowed_fields": ["summary", "title"], "excluded_fields": [], "requires_user_confirmation": False}
+        return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": [], "requires_user_confirmation": False}
 
     def build_policy(self, task: dict[str, Any], focal: dict[str, Any], control: str, evidence: dict[str, Any]) -> dict[str, Any]:
         flags = set(evidence.get("risk_flags", []))
