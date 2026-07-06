@@ -87,6 +87,97 @@ def object_text(obj: dict[str, Any]) -> str:
     ]).lower()
 
 
+WM_CODE = re.compile(r"WM-\d+")
+FOCAL_POS = ("확정", "승인", "우선", "처리 대상", "기준 참조", "최종")
+FOCAL_NEG = ("보류", "제외", "무시", "취소")
+ORDINALS = {"첫": 0, "두": 1, "세": 2, "네": 3, "다섯": 4}
+
+
+def resolve_focal_by_marker(task: dict[str, Any]) -> dict[str, Any] | None:
+    """marker 간접 참조 해석: route/binding record가 고른 phase → marker → ref_code → object."""
+    rec = record_map(records_of(task))
+    refs = rec.get("focal_marker_refs")
+    trace = rec.get("focal_resolution_trace")
+    if not isinstance(refs, dict) or not isinstance(trace, dict):
+        return None
+    marker_to_ref = refs.get("marker_to_ref") or {}
+    phase = trace.get("latest_phase")
+    if not phase:
+        rule = trace.get("latest_phase_rule") or {}
+        source_val = rec.get(str(trace.get("phase_source")))
+        phase = rule.get(str(source_val)) or rule.get("fallback")
+    marker = (trace.get("phase_to_marker") or {}).get(str(phase))
+    ref = marker_to_ref.get(str(marker))
+    if not ref:
+        return None
+    for obj in objects_of(task):
+        if str((obj.get("attrs") or {}).get("ref_code")) == str(ref):
+            return obj
+    return None
+
+
+def score_codes_in_summary(summary: str) -> dict[str, float]:
+    """history 문장 안 WM-code마다 주변 긍정/부정 신호를 점수화.
+
+    문맥 창은 문장 경계(.)와 이웃 코드에서 잘라 옆 후보의 신호를 훔치지 않게 하고,
+    한국어는 수식어가 명사 앞에 오므로 코드 앞 문맥에 2배 가중치를 준다.
+    """
+    matches = list(WM_CODE.finditer(summary))
+    if not matches:
+        return {}
+    scores: dict[str, float] = {}
+    for i, m in enumerate(matches):
+        code = m.group(0)
+        scores.setdefault(code, 0.0)
+        pre_start = summary.rfind(".", 0, m.start()) + 1
+        if i > 0:
+            pre_start = max(pre_start, matches[i - 1].end())
+        pre = summary[max(pre_start, m.start() - 24):m.start()]
+        post_end = summary.find(".", m.end())
+        post_end = len(summary) if post_end < 0 else post_end
+        if i + 1 < len(matches):
+            post_end = min(post_end, matches[i + 1].start())
+        post = summary[m.end():min(post_end, m.end() + 24)]
+        if any(p in pre for p in FOCAL_POS):
+            scores[code] += 2
+        if any(n in pre for n in FOCAL_NEG):
+            scores[code] -= 2
+        if any(p in post for p in FOCAL_POS):
+            scores[code] += 1
+        if any(n in post for n in FOCAL_NEG):
+            scores[code] -= 1
+    uniq = list(dict.fromkeys(m.group(0) for m in matches))
+    for om in re.finditer(r"(첫|두|세|네|다섯)\s*번째", summary):
+        idx = ORDINALS[om.group(1)]
+        after = summary[om.end():om.end() + 24]
+        if idx < len(uniq):
+            if any(n in after for n in FOCAL_NEG):
+                scores[uniq[idx]] -= 2
+            elif any(p in after for p in FOCAL_POS):
+                scores[uniq[idx]] += 2
+    g = summary.find("가운데")
+    if g >= 0 and uniq and any(p in summary[g:g + 28] for p in FOCAL_POS):
+        scores[uniq[len(uniq) // 2]] += 2
+    return scores
+
+
+def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
+    """visible_history에서 확정/승인된 ref_code를 찾아 해당 object 반환 (최신 항목 우선)."""
+    by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
+    for item in reversed(task.get("visible_history") or []):
+        summary = str((item or {}).get("summary", ""))
+        scores = score_codes_in_summary(summary)
+        cands = [c for c in scores if c in by_ref]
+        if not cands:
+            continue
+        best = max(cands, key=lambda c: scores[c])
+        if scores[best] > 0:
+            return by_ref[best]
+        if len(cands) == 1:
+            return by_ref[cands[0]]
+    return None
+
+
 class FinalHarness:
     def __init__(self) -> None:
         self.slm = FixedSLMClient()
@@ -141,6 +232,16 @@ class FinalHarness:
         records = records_of(task)
         if not objects:
             return {}
+
+        # 0) marker 간접 참조가 있으면 그 체인이 가장 명시적인 근거다.
+        focal = resolve_focal_by_marker(task)
+        if focal is not None:
+            return focal
+
+        # 0-2) history에서 확정/승인된 ref_code가 지목되면 따른다.
+        focal = resolve_focal_by_history(task)
+        if focal is not None:
+            return focal
 
         # 1) record 값이 object id를 직접 가리키면 우선합니다.
         object_by_id = {str(o.get("id")): o for o in objects}
