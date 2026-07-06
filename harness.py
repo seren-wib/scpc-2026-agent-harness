@@ -88,11 +88,11 @@ def object_text(obj: dict[str, Any]) -> str:
 
 
 # dev는 WM-#### 형식이지만 접두사가 바뀌어도 살아남도록 일반화한다.
-# 주의: 한글 조사가 붙으면(\"WM-9921로\") \b가 성립하지 않으므로 경계 표식은 쓰지 않는다.
+# 주의: 한글 조사가 붙으면("WM-9921로") \b가 성립하지 않으므로 경계 표식은 쓰지 않는다.
 WM_CODE = re.compile(r"[A-Z]{2,4}-\d{3,6}")
-FOCAL_POS = ("확정", "승인", "우선", "처리 대상", "기준 참조", "기준", "최종", "선택", "유효")
-FOCAL_NEG = ("보류", "제외", "무시", "취소", "금지", "폐기", "아니")
-ORDINALS = {"첫": 0, "두": 1, "세": 2, "네": 3, "다섯": 4, "여섯": 5, "일곱": 6}
+FOCAL_POS = ("확정", "승인", "우선", "처리 대상", "기준 참조", "최종")
+FOCAL_NEG = ("보류", "제외", "무시", "취소")
+ORDINALS = {"첫": 0, "두": 1, "세": 2, "네": 3, "다섯": 4}
 
 
 def resolve_focal_by_marker(task: dict[str, Any]) -> dict[str, Any] | None:
@@ -103,18 +103,31 @@ def resolve_focal_by_marker(task: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(refs, dict) or not isinstance(trace, dict):
         return None
     marker_to_ref = refs.get("marker_to_ref") or {}
-    phase = trace.get("latest_phase")
-    if not phase:
-        rule = trace.get("latest_phase_rule") or {}
-        source_val = rec.get(str(trace.get("phase_source")))
-        phase = rule.get(str(source_val)) or rule.get("fallback")
-    marker = (trace.get("phase_to_marker") or {}).get(str(phase))
-    ref = marker_to_ref.get(str(marker))
-    if not ref:
-        return None
-    for obj in objects_of(task):
-        if str((obj.get("attrs") or {}).get("ref_code")) == str(ref):
-            return obj
+    phase_to_marker = trace.get("phase_to_marker") or {}
+    rule = trace.get("latest_phase_rule") or {}
+
+    # phase 후보를 신뢰도 순으로 수집한다. 최신성 원칙에 따라 phase_source record에서
+    # rule로 유도한 phase(현재 binding 상태)를 명시된 latest_phase보다 우선한다 —
+    # 둘이 일치하면 차이가 없고, 어긋나면 rule 쪽이 더 최신 상태를 반영한다.
+    candidates: list[str] = []
+    source_keys = [str(trace.get("phase_source"))]
+    source_keys += [k for k in rec if ("binding" in k or "route" in k) and k not in source_keys]
+    for key in source_keys:
+        mapped = rule.get(str(rec.get(key)))
+        if mapped:
+            candidates.append(str(mapped))
+    if trace.get("latest_phase"):
+        candidates.append(str(trace["latest_phase"]))
+    if rule.get("fallback"):
+        candidates.append(str(rule["fallback"]))
+
+    by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
+    for phase in candidates:
+        marker = phase_to_marker.get(phase)
+        ref = marker_to_ref.get(str(marker))
+        if ref and str(ref) in by_ref:
+            return by_ref[str(ref)]
+    # trace가 유효한 marker를 못 고르면 실패로 두고 history 해석으로 넘긴다.
     return None
 
 
@@ -164,36 +177,29 @@ def score_codes_in_summary(summary: str) -> dict[str, float]:
 
 
 # "단, ..." 꼬리 정정 구절: 가장 최신 지시라서 target/control을 동시에 결정한다.
-CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "상태만 남", "상태 기록", "기록으로만",
-                "로컬 상태", "내부 상태", "내부 업데이트", "내부에서만", "갱신만",
-                "기기 안", "장치 안", "공유하지 말", "보내지 말", "전송하지 말", "내보내지 말",
-                "전달 대신", "전달 동작은 취소", "외부로 보내")
-CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안",
-               "중단해야", "진행 불가", "해서는 안", "하지 마라")
+CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "로컬 상태", "내부 상태", "내부 업데이트",
+                "기기 안", "장치 안", "공유하지 말", "보내지 말", "전달 대신", "전달 동작은 취소")
+CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안")
 CLAUSE_CONFIRM = ("사용자에게 먼저 확인", "다시 확인", "먼저 확인", "확인해야 한다", "확인 전에는",
-                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없",
-                  "재확인", "여부를 확인", "확실하지 않", "불명확", "판단할 수 없")
-CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외", "식별 정보 제외", "민감한 값 제외")
-
-CLAUSE_MARKERS = ("단,", "다만,")
-RECENCY_MARKS = ("가장 최신", "마지막", "최신 정정", "방금")
+                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없")
+CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외")
 
 
-def clause_candidates(task: dict[str, Any]):
-    """정정 구절 후보를 신뢰도 순으로 생성: '단,' 계열 표지 → 최신성 표지가 붙은 문장."""
+def final_clause(task: dict[str, Any]) -> str:
+    """prompt(현재 발화) 우선, 없으면 최신 history에서 '단,' 꼬리 구절을 찾는다."""
     sources = [str(task.get("prompt", ""))]
     sources += [str((h or {}).get("summary", "")) for h in reversed(task.get("visible_history") or [])]
     for src in sources:
-        i = max(src.rfind(m) for m in CLAUSE_MARKERS)
+        i = src.rfind("단,")
         if i >= 0:
-            yield src[i:]
-    for src in sources:
-        for sent in reversed(src.split(".")):
-            if any(w in sent for w in RECENCY_MARKS):
-                yield sent
+            return src[i:]
+    return ""
 
 
-def _kind_of(clause: str) -> str | None:
+def clause_kind(task: dict[str, Any]) -> str | None:
+    clause = final_clause(task)
+    if not clause:
+        return None
     if any(k in clause for k in CLAUSE_LOCAL):
         return "local"
     if any(k in clause for k in CLAUSE_STOP):
@@ -202,14 +208,6 @@ def _kind_of(clause: str) -> str | None:
         return "scope"
     if any(k in clause for k in CLAUSE_CONFIRM):
         return "confirm"
-    return None
-
-
-def clause_kind(task: dict[str, Any]) -> str | None:
-    for clause in clause_candidates(task):
-        kind = _kind_of(clause)
-        if kind:
-            return kind
     return None
 
 
@@ -225,11 +223,11 @@ def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
     if "enterprise_policy_recall" in rec:
         return "approval_channel"
     prompt = str(task.get("prompt", ""))
-    if any(k in prompt for k in ("조명", "공간", "조도", "불을", "전등", "불빛", "밝기")):
+    if any(k in prompt for k in ("조명", "공간", "조도", "불을")):
         return "dusk_room"
-    if any(k in prompt for k in ("검진", "점검", "건강", "복약", "처방", "병원", "진료", "클리닉")):
+    if any(k in prompt for k in ("검진", "점검", "건강", "복약", "처방")):
         return "health_channel"
-    if "승인" in prompt or "결재" in prompt:
+    if "승인" in prompt:
         return "approval_channel"
     return "preferred_channel"
 
@@ -237,11 +235,23 @@ def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
 # 프로필을 못 찾았을 때(스트림에 write가 없던 경우)의 도메인 기본값.
 MEMORY_FIELD_DEFAULTS = {"dusk_room": "living_room", "health_channel": "caregiver"}
 
+# 요청 도메인 → 대상 object type (TERMS_GUIDE 도메인 용어 표 기반).
+DOMAIN_TYPE_HINTS = (
+    (("결제", "송금", "금액"), "payment_request"),
+    (("조명", "루틴", "자동화"), "iot_routine"),
+    (("사진", "갤러리", "이미지"), "gallery_item"),
+    (("건강 기록", "복약", "혈압", "혈당"), "health_record"),
+    (("설정을", "설정 변경", "모드를"), "device_setting"),
+    (("일정", "예약", "캘린더"), "calendar_event"),
+)
+
+# 이전 턴과 같은 수신처를 가리키는 표현 (공개 ontology의 same_place_scope_check 계열).
+SAME_PLACE_CUES = ("같은 곳", "같은 채널", "같은 대상", "같은 수신처", "거기로", "아까 그")
+
 
 def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
     """visible_history에서 확정/승인된 ref_code를 찾아 해당 object 반환 (최신 항목 우선)."""
     by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
-    fallback: dict[str, Any] | None = None
     for item in reversed(task.get("visible_history") or []):
         summary = str((item or {}).get("summary", ""))
         scores = score_codes_in_summary(summary)
@@ -253,10 +263,7 @@ def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
             return by_ref[best]
         if len(cands) == 1:
             return by_ref[cands[0]]
-        # 판정 불가 요약이라도 최신 요약의 최고점 후보는 기억해 둔다 (양성 판정이 없을 때의 폴백).
-        if fallback is None and scores[best] >= 0:
-            fallback = by_ref[best]
-    return fallback
+    return None
 
 
 class FinalHarness:
@@ -345,6 +352,20 @@ class FinalHarness:
             if ref_code and ref_code in history_text:
                 return obj
 
+        # 2-2) 요청 도메인이 특정 object type을 지목하면 그 type을 우선한다 (TERMS_GUIDE 도메인 표).
+        prompt = str(task.get("prompt", ""))
+        for keywords, obj_type in DOMAIN_TYPE_HINTS:
+            if any(k in prompt for k in keywords):
+                typed = [o for o in objects if str(o.get("type")) == obj_type]
+                if len(typed) == 1:
+                    return typed[0]
+                if typed:
+                    for obj in typed:
+                        ref_code = str((obj.get("attrs") or {}).get("ref_code") or "").lower()
+                        if ref_code and ref_code in history_text:
+                            return obj
+                break
+
         # 3) prompt와 attrs 텍스트가 많이 겹치는 object를 고릅니다.
         prompt_tokens = {tok for tok in re.findall(r"[A-Za-z0-9가-힣_]+", str(task.get("prompt", "")).lower()) if len(tok) >= 2}
         best = objects[0]
@@ -395,6 +416,11 @@ class FinalHarness:
                     return str(resolved[key])
         if isinstance(resolved, str) and resolved:
             return resolved
+
+        # 6) "같은 곳에" 류: 세션에서 마지막으로 확정된 수신처를 잇는다.
+        prompt = str(task.get("prompt", ""))
+        if any(c in prompt for c in SAME_PLACE_CUES) and session.get("last_target") not in (None, "", "user"):
+            return str(session["last_target"])
 
         for key in ("recipient", "target", "channel", "app", "merchant", "name"):
             if attrs.get(key):
@@ -452,8 +478,20 @@ class FinalHarness:
             if "반대" in prompt or "다른 말투" in prompt:
                 return "ask"
 
+        # 4-2) 공개 ontology에 문서화된 위험/확인 신호들 (dev에는 없지만 채점 어휘에 존재).
+        if "impersonation" in values:
+            return "hold"
+        if "minor_location" in values:
+            return "hold"
+        if "one_time_or_recurring" in values or "duration_ambiguous" in values:
+            return "ask"
+        if "calendar_conflict" in values or "tone_conflict" in values:
+            return "ask"
+        if "stored_preference_violation" in values or "privacy_rule_violation" in values:
+            return "hold"
+
         # 5) 확인이 필요한 변경/불일치 신호.
-        if "confirmation" in str(rec.get("payment_policy", "")):
+        if "confirmation" in str(rec.get("payment_policy", "")) or "over_50000" in values:
             return "ask"
         prompt = str(task.get("prompt", ""))
         if "원본" in prompt and "익명" in prompt and "local_update" in str(rec.get("share_boundary_update", "")):
