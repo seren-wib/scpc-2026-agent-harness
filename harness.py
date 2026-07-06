@@ -184,7 +184,7 @@ CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "상태�
 CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안",
                "중단해야", "진행 불가", "해서는 안", "하지 마라")
 CLAUSE_CONFIRM = ("사용자에게 먼저 확인", "다시 확인", "먼저 확인", "확인해야 한다", "확인 전에는",
-                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없",
+                  "미확정", "확인되지 않았", "결론을 내릴 수 없",
                   "재확인", "여부를 확인", "확실하지 않", "불명확", "판단할 수 없")
 CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외", "식별 정보 제외", "민감한 값 제외")
 
@@ -268,7 +268,7 @@ def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
         best = max(cands, key=lambda c: scores[c])
         if scores[best] > 0:
             return by_ref[best]
-        if len(cands) == 1:
+        if len(cands) == 1 and scores[cands[0]] >= 0:
             return by_ref[cands[0]]
         # 긍정어가 없는 요약: dev의 모든 history 가족에서 승자가 "고유 코드 목록의
         # 2번째"였던 구조적 사전확률을 폴백으로 쓴다 (부정어 걸린 후보는 제외).
@@ -470,16 +470,15 @@ class FinalHarness:
         safety = str(rec.get("safety_mode", ""))
         if safety and safety not in ("off", "inactive", "normal"):
             return "hold"
+        # 철회 판정은 consent record만 본다 — 다른 record 서사 속 '철회' 언급은 최신 상태가 아닐 수 있다.
         consent = rec.get("consent")
-        consent_status = str(consent.get("status", "")) if isinstance(consent, dict) else str(consent or "")
-        if any(w in consent_status for w in ("revoked", "withdraw", "denied", "철회", "거부")):
-            return "hold"
-        if any(w in values for w in ("revoked", "철회")):
+        consent_text = text_of(consent).lower()
+        if any(w in consent_text for w in ("revoked", "withdraw", "denied", "철회", "거부")):
             return "hold"
 
         # 2) 건강 원문 등 외부 공유 자체가 금지된 경우 중단.
         forbid = str(rec.get("external_share_policy", "")) + " " + str(rec.get("health_share_policy", ""))
-        if "doctor_note" in forbid or "health" in forbid and "forbidden" in forbid:
+        if ("doctor_note" in forbid or "health" in forbid) and "forbidden" in forbid:
             return "hold"
 
         # 3) 메모리 기록 요청은 그대로 진행.
@@ -639,10 +638,10 @@ class FinalHarness:
                 purpose, reason = "clarify_precondition", "precondition_changed"
             else:
                 purpose = reason = "route_resolution_required"
-            clarify_target = "user" if target == "user" or "ambiguous_target" in record_map(records_of(task)) else target
+            # clarify는 정의상 사용자에게 확인을 구하는 동작이다 (핸드북 verb 표).
             return [
                 {"verb": "read", "target": focal_id, "args": {"purpose": purpose}},
-                {"verb": "clarify", "target": clarify_target, "args": {"reason": reason}},
+                {"verb": "clarify", "target": "user", "args": {"reason": reason}},
             ]
         if control == "amend":
             excluded = scope.get("excluded_fields") or []
