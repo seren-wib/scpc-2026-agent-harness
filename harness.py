@@ -58,6 +58,21 @@ def records_of(task: dict[str, Any]) -> list[dict[str, Any]]:
     return list(((task.get("device_state") or {}).get("records") or []))
 
 
+def history_in_turn_order(task: dict[str, Any]) -> list[dict[str, Any]]:
+    """visible_history를 turn 값 기준 오름차순으로 정렬한다 (같은 turn은 배열 순서 유지).
+
+    핸드북 §5 ⚠: 배열 순서는 시간 순서가 아니며, 순서 해석은 turn 값으로만 한다.
+    turn이 없는 항목은 가장 오래된 것으로 간주한다.
+    """
+    def turn_val(item: Any) -> float:
+        t = (item or {}).get("turn") if isinstance(item, dict) else None
+        return float(t) if isinstance(t, (int, float)) else float("-inf")
+
+    keyed = list(enumerate(task.get("visible_history") or []))
+    keyed.sort(key=lambda p: (turn_val(p[1]), p[0]))
+    return [item for _, item in keyed]
+
+
 def objects_of(task: dict[str, Any]) -> list[dict[str, Any]]:
     return list(((task.get("device_state") or {}).get("objects") or []))
 
@@ -92,7 +107,13 @@ def object_text(obj: dict[str, Any]) -> str:
 WM_CODE = re.compile(r"[A-Z]{2,4}-\d{3,6}")
 FOCAL_POS = ("확정", "승인", "우선", "처리 대상", "기준 참조", "최종")
 FOCAL_NEG = ("보류", "제외", "무시", "취소")
-ORDINALS = {"첫": 0, "두": 1, "세": 2, "네": 3, "다섯": 4}
+ORDINALS = {"첫": 0, "두": 1, "둘": 1, "세": 2, "셋": 2, "네": 3, "넷": 3, "다섯": 4, "여섯": 5, "일곱": 6}
+ORDINAL_RE = re.compile(r"(첫|두|세|네|다섯|여섯|일곱|\d+)\s*번째|(첫|둘|셋|넷|다섯|여섯|일곱)째")
+
+
+def _ordinal_index(match: re.Match) -> int:
+    word = match.group(1) or match.group(2)
+    return ORDINALS[word] if word in ORDINALS else int(word) - 1
 
 
 def resolve_focal_by_marker(task: dict[str, Any]) -> dict[str, Any] | None:
@@ -162,8 +183,22 @@ def score_codes_in_summary(summary: str) -> dict[str, float]:
         if any(n in post for n in FOCAL_NEG):
             scores[code] -= 1
     uniq = list(dict.fromkeys(m.group(0) for m in matches))
-    for om in re.finditer(r"(첫|두|세|네|다섯)\s*번째", summary):
-        idx = ORDINALS[om.group(1)]
+    ordinal_hits = list(ORDINAL_RE.finditer(summary))
+    # "N번째 후보만"의 '만' 한정은 동사 어휘와 무관한 문법 신호다: '만'이 붙은
+    # 서수가 지목 대상이고, 같은 요약에 열거된 나머지 서수는 대조군으로 본다.
+    only_idx = None
+    for om in ordinal_hits:
+        if re.match(r"\s*(?:후보|항목|건)?\s*만(?![큼약])", summary[om.end():om.end() + 8]):
+            only_idx = _ordinal_index(om)
+            break
+    if only_idx is not None and only_idx < len(uniq):
+        scores[uniq[only_idx]] += 3
+        for om in ordinal_hits:
+            idx = _ordinal_index(om)
+            if idx != only_idx and idx < len(uniq):
+                scores[uniq[idx]] -= 1
+    for om in ordinal_hits:
+        idx = _ordinal_index(om)
         after = summary[om.end():om.end() + 24]
         if idx < len(uniq):
             if any(n in after for n in FOCAL_NEG):
@@ -173,6 +208,27 @@ def score_codes_in_summary(summary: str) -> dict[str, float]:
     g = summary.find("가운데")
     if g >= 0 and uniq and any(p in summary[g:g + 28] for p in FOCAL_POS):
         scores[uniq[len(uniq) // 2]] += 2
+    if uniq:
+        for lm in re.finditer(r"마지막", summary):
+            after = summary[lm.end():lm.end() + 24]
+            if re.match(r"\s*(?:후보|항목|건)?\s*만(?![큼약])", after) or any(p in after for p in FOCAL_POS):
+                scores[uniq[-1]] += 2
+            elif any(n in after for n in FOCAL_NEG):
+                scores[uniq[-1]] -= 2
+    # 위치 지시가 하나뿐이고 어휘 신호가 전무하면 그 지시 자체를 지목으로 본다 —
+    # 동사가 사전 밖이어도 위치 참조는 살아남는 구조 신호라서다.
+    if len(ordinal_hits) == 1 and uniq and not any(scores.values()):
+        idx = _ordinal_index(ordinal_hits[0])
+        if 0 <= idx < len(uniq):
+            scores[uniq[idx]] += 2
+    # 반복 호명도 어휘와 무관한 지목 신호다: 목록 나열은 코드를 1회씩 부르고,
+    # 지목 문장은 그 코드를 한 번 더 부른다.
+    counts: dict[str, int] = {}
+    for m in matches:
+        counts[m.group(0)] = counts.get(m.group(0), 0) + 1
+    repeated = [c for c in uniq if counts[c] >= 2]
+    if len(repeated) == 1:
+        scores[repeated[0]] += 2
     return scores
 
 
@@ -194,7 +250,7 @@ CLAUSE_MARKERS = ("단,", "다만,")
 def final_clause(task: dict[str, Any]) -> str:
     """prompt(현재 발화) 우선, 없으면 최신 history에서 '단,' 꼬리 구절을 찾는다."""
     sources = [str(task.get("prompt", ""))]
-    sources += [str((h or {}).get("summary", "")) for h in reversed(task.get("visible_history") or [])]
+    sources += [str((h or {}).get("summary", "")) for h in reversed(history_in_turn_order(task))]
     for src in sources:
         i = max(src.rfind(m) for m in CLAUSE_MARKERS)
         if i >= 0:
@@ -214,7 +270,15 @@ def clause_kind(task: dict[str, Any]) -> str | None:
         return "scope"
     if any(k in clause for k in CLAUSE_CONFIRM):
         return "confirm"
-    return None
+    # 마커는 잡혔는데 내용 어휘가 사전 밖이면 미분류로 흘리지 않는다. 느슨한 단서로
+    # 의도를 추정하고, 꼬리 정정의 최빈 의도인 '내부 처리로 축소'(local)를 기본값으로 둔다.
+    if any(k in clause for k in ("중단", "멈추", "막아", "불가", "보류")):
+        return "stop"
+    if "확인" in clause or "물어" in clause:
+        return "confirm"
+    if any(k in clause for k in ("요약", "제외", "빼고")):
+        return "scope"
+    return "local"
 
 
 def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
@@ -258,9 +322,10 @@ SAME_PLACE_CUES = ("같은 곳", "같은 채널", "같은 대상", "같은 수�
 def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
     """visible_history에서 확정/승인된 ref_code를 찾아 해당 object 반환 (최신 항목 우선)."""
     by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
+    summaries = [str((item or {}).get("summary", "")) for item in history_in_turn_order(task)]
     fallback: dict[str, Any] | None = None
-    for item in reversed(task.get("visible_history") or []):
-        summary = str((item or {}).get("summary", ""))
+    for i in range(len(summaries) - 1, -1, -1):
+        summary = summaries[i]
         scores = score_codes_in_summary(summary)
         cands = [c for c in scores if c in by_ref]
         if not cands:
@@ -270,6 +335,15 @@ def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
             return by_ref[best]
         if len(cands) == 1 and scores[cands[0]] >= 0:
             return by_ref[cands[0]]
+        # 지목 문장이 코드 목록과 분리된 항목/프롬프트에 있을 수 있다: 이 목록 뒤에
+        # 오는 요약들과 현재 prompt를 이어붙여 위치 지시를 재채점한다.
+        joined = " ".join([summary] + summaries[i + 1:] + [str(task.get("prompt", ""))])
+        jscores = score_codes_in_summary(joined)
+        jcands = [c for c in jscores if c in by_ref]
+        if jcands:
+            jbest = max(jcands, key=lambda c: jscores[c])
+            if jscores[jbest] > 0:
+                return by_ref[jbest]
         # 긍정어가 없는 요약: dev의 모든 history 가족에서 승자가 "고유 코드 목록의
         # 2번째"였던 구조적 사전확률을 폴백으로 쓴다 (부정어 걸린 후보는 제외).
         if fallback is None:
@@ -340,6 +414,13 @@ class FinalHarness:
         focal = resolve_focal_by_marker(task)
         if focal is not None:
             return focal
+
+        # 0-1) record 값이 후보 ref_code 하나만을 지목하면 그것이 가장 구조적인 신호다
+        #      (history 폴백보다 먼저 봐야 폴백이 record 지목을 가로채지 않는다).
+        by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects if (o.get("attrs") or {}).get("ref_code")}
+        rec_codes = {c for r in records for c in WM_CODE.findall(text_of(r.get("value"))) if c in by_ref}
+        if len(rec_codes) == 1:
+            return by_ref[rec_codes.pop()]
 
         # 0-2) history에서 확정/승인된 ref_code가 지목되면 따른다.
         focal = resolve_focal_by_history(task)
