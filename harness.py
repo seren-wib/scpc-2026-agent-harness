@@ -489,33 +489,83 @@ class FinalHarness:
         return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": [], "requires_user_confirmation": False}
 
     def build_policy(self, task: dict[str, Any], focal: dict[str, Any], control: str, evidence: dict[str, Any]) -> dict[str, Any]:
-        flags = set(evidence.get("risk_flags", []))
-        violations: set[str] = set()
-        values = " ".join(text_of(r.get("value")) for r in records_of(task)).lower()
-        if "revoked" in values or "철회" in values:
-            violations.add("consent_revoked")
-        if "phishing" in values or "피싱" in values:
-            violations.add("security_alert_ignored")
+        rec = record_map(records_of(task))
+        flags: set[str] = set()
+
+        if str(rec.get("session_share_policy", "")) == "strict":
+            flags.add("strict_share_policy")
+        if "ambiguous_target" in rec:
+            flags.add("target_ambiguity")
+        if "ambiguous_focal" in rec:
+            flags.add("ambiguous_focal")
+        if self.sensitive_fields_of(focal):
+            flags.add("sensitive_content")
+        if "external" in str(rec.get("route_candidate_snapshot", "")):
+            flags.add("external_share")
+        if clause_kind(task) == "local":
+            flags.add("precondition_changed")
+
+        if control == "hold":
+            flags.update(("precondition_invalidated", "safety"))
+        elif control == "ask":
+            flags.add("clarification_required")
+        elif control == "amend":
+            flags.update(("external_share", "minimal_disclosure"))
+        elif control == "proceed":
+            if "persistent_memory_write" in rec or clause_kind(task) == "local" \
+                    or str(rec.get("share_boundary_update", "")).startswith("local_update"):
+                flags.add("local_only")
+
+        violations = ["precondition_changed_ignored"] if control == "hold" else []
         return {
             "risk_flags": sorted(flags),
-            "violations": sorted(violations),
+            "violations": violations,
             "requires_confirmation": control == "ask",
         }
 
     def build_plan_events(self, task: dict[str, Any], focal_id: str, target: str, control: str, scope: dict[str, Any], policy: dict[str, Any]) -> list[dict[str, Any]]:
-        events = [{"verb": "read", "target": focal_id, "args": {"purpose": "inspect_task_context"}}]
         if control == "hold":
-            reason = policy.get("violations", ["safety_or_policy"])[0] if policy.get("violations") else "safety_or_policy"
-            events.append({"verb": "guard", "target": focal_id, "args": {"reason": reason}})
-        elif control == "ask":
-            events.append({"verb": "clarify", "target": "user", "args": {"reason": "confirmation_required"}})
-        else:
-            if scope.get("mode") == "redacted":
-                events.append({"verb": "redact", "target": focal_id, "args": {"remove": "sensitive_fields"}})
-            elif scope.get("mode") in {"summary", "status_only"}:
-                events.append({"verb": "summarize", "target": focal_id, "args": {"mode": scope.get("mode")}})
-            events.append({"verb": "dispatch", "target": target, "args": {"scope": scope.get("mode")}})
-        return events
+            return [
+                {"verb": "read", "target": focal_id, "args": {"purpose": "invalidated_precondition"}},
+                {"verb": "guard", "target": focal_id, "args": {"reason": "precondition_invalidated"}},
+            ]
+        if control == "ask":
+            # 꼬리 정정("단, 확인") 기반이면 전제 변경 확인, record 기반이면 route 해석 확인.
+            if clause_kind(task) == "confirm":
+                purpose, reason = "clarify_precondition", "precondition_changed"
+            else:
+                purpose = reason = "route_resolution_required"
+            clarify_target = "user" if target == "user" or "ambiguous_target" in record_map(records_of(task)) else target
+            return [
+                {"verb": "read", "target": focal_id, "args": {"purpose": purpose}},
+                {"verb": "clarify", "target": clarify_target, "args": {"reason": reason}},
+            ]
+        if control == "amend":
+            excluded = scope.get("excluded_fields") or []
+            remove = "raw_quote" if excluded == ["raw_quote"] else "sensitive_fields"
+            return [
+                {"verb": "read", "target": focal_id, "args": {"purpose": "minimal_disclosure"}},
+                {"verb": "redact", "target": focal_id, "args": {"remove": remove}},
+                {"verb": "dispatch", "target": target, "args": {"scope": "redacted"}},
+            ]
+        # proceed: 내부 갱신 / 원문 전달 / 요약 전달.
+        mode = scope.get("mode")
+        if mode == "status_only":
+            return [
+                {"verb": "read", "target": focal_id, "args": {"purpose": "local_update"}},
+                {"verb": "verify", "target": "share_boundary_update", "args": {"scope": "local_update"}},
+                {"verb": "update", "target": focal_id, "args": {"state": "local_status_only"}},
+            ]
+        if mode == "raw":
+            return [
+                {"verb": "read", "target": focal_id, "args": {"purpose": "inspect_context"}},
+                {"verb": "dispatch", "target": target, "args": {"scope": "raw"}},
+            ]
+        return [
+            {"verb": "read", "target": focal_id, "args": {"purpose": "inspect_context"}},
+            {"verb": "summarize", "target": focal_id, "args": {"mode": "summary"}},
+            {"verb": "dispatch", "target": target, "args": {"scope": "summary"}},
+        ]
 
     def user_response(self, control: str, target: str, scope: dict[str, Any], policy: dict[str, Any]) -> str:
         if control == "hold":
