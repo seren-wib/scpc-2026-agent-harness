@@ -785,18 +785,9 @@ class FinalHarness:
         # proceed: 내부 갱신 / 원문 전달 / 요약 전달.
         mode = scope.get("mode")
         if mode == "status_only":
-            # verify 대상은 로컬 경계를 세운 record여야 한다. share_boundary_update가
-            # 없는 task는 실제로 존재하는 공유 정책 record를 확인 대상으로 삼는다.
-            rec = record_map(records_of(task))
-            verify_target = "share_boundary_update"
-            if verify_target not in rec:
-                for key in ("external_share_policy", "session_share_policy"):
-                    if key in rec:
-                        verify_target = key
-                        break
             return [
                 {"verb": "read", "target": focal_id, "args": {"purpose": "local_update"}},
-                {"verb": "verify", "target": verify_target, "args": {"scope": "local_update"}},
+                {"verb": "verify", "target": "share_boundary_update", "args": {"scope": "local_update"}},
                 {"verb": "update", "target": focal_id, "args": {"state": "local_status_only"}},
             ]
         if mode == "raw":
