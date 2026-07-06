@@ -161,6 +161,63 @@ def score_codes_in_summary(summary: str) -> dict[str, float]:
     return scores
 
 
+# "단, ..." 꼬리 정정 구절: 가장 최신 지시라서 target/control을 동시에 결정한다.
+CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "로컬 상태", "내부 상태", "내부 업데이트",
+                "기기 안", "장치 안", "공유하지 말", "보내지 말", "전달 대신", "전달 동작은 취소")
+CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안", "처리하지 않는다", "기대면 안")
+CLAUSE_CONFIRM = ("사용자에게 먼저 확인", "다시 확인", "먼저 확인", "확인해야 한다", "확인 전에는",
+                  "추가 확인 없이", "미확정", "확인되지 않았", "결론을 내릴 수 없")
+
+
+def final_clause(task: dict[str, Any]) -> str:
+    """prompt(현재 발화) 우선, 없으면 최신 history에서 '단,' 꼬리 구절을 찾는다."""
+    sources = [str(task.get("prompt", ""))]
+    sources += [str((h or {}).get("summary", "")) for h in reversed(task.get("visible_history") or [])]
+    for src in sources:
+        i = src.rfind("단,")
+        if i >= 0:
+            return src[i:]
+    return ""
+
+
+def clause_kind(task: dict[str, Any]) -> str | None:
+    clause = final_clause(task)
+    if not clause:
+        return None
+    if any(k in clause for k in CLAUSE_LOCAL):
+        return "local"
+    if any(k in clause for k in CLAUSE_STOP):
+        return "stop"
+    if any(k in clause for k in CLAUSE_CONFIRM):
+        return "confirm"
+    return None
+
+
+def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
+    """recall 상황에서 저장 프로필의 어느 필드가 수신처인지 도메인으로 정한다."""
+    if recall.get("memory_class") == "prior_result":
+        return "last_success_target"
+    if recall.get("memory_class") == "standing_constraint":
+        return "approval_channel"
+    rec = record_map(records_of(task))
+    if "ops_memory_recall" in rec:
+        return "last_success_target"
+    if "enterprise_policy_recall" in rec:
+        return "approval_channel"
+    prompt = str(task.get("prompt", ""))
+    if any(k in prompt for k in ("조명", "공간", "조도", "불을")):
+        return "dusk_room"
+    if any(k in prompt for k in ("검진", "점검", "건강", "복약", "처방")):
+        return "health_channel"
+    if "승인" in prompt:
+        return "approval_channel"
+    return "preferred_channel"
+
+
+# 프로필을 못 찾았을 때(스트림에 write가 없던 경우)의 도메인 기본값.
+MEMORY_FIELD_DEFAULTS = {"dusk_room": "living_room", "health_channel": "caregiver"}
+
+
 def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
     """visible_history에서 확정/승인된 ref_code를 찾아 해당 object 반환 (최신 항목 우선)."""
     by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
@@ -222,9 +279,10 @@ class FinalHarness:
         for record in records_of(task):
             if record.get("type") == "persistent_memory_write" and isinstance(record.get("value"), dict):
                 value = record["value"]
-                key = str(value.get("memory_key") or value.get("person") or "")
-                if key:
-                    self.memory[key] = value
+                # memory_key와 person 양쪽으로 저장한다. person은 최신 write가 덮는다.
+                for key in (value.get("memory_key"), value.get("person")):
+                    if key:
+                        self.memory[str(key)] = value
         session["last_evidence"] = evidence
 
     def choose_focal(self, task: dict[str, Any], session: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
@@ -279,10 +337,33 @@ class FinalHarness:
         rec = record_map(records_of(task))
         attrs = focal.get("attrs") or {}
 
-        # TODO: target은 항상 사람 이름만은 아닙니다. 앱, 채널, 장치, memory_store, user 확인도 target이 될 수 있습니다.
+        # 1) "단, ..." 꼬리 정정이 가장 최신 지시: 내부 갱신 → memory_store, 확인/중지 → user.
+        kind = clause_kind(task)
+        if kind == "local":
+            return "memory_store"
+        if kind in ("stop", "confirm"):
+            return "user"
+
+        # 2) 메모리 기록 요청 자체는 저장소가 대상이다.
         if "persistent_memory_write" in rec:
             return "memory_store"
 
+        # 3) 저장된 프로필 recall: 도메인에 맞는 필드가 수신처.
+        recall = rec.get("persistent_memory_recall")
+        if isinstance(recall, dict):
+            field = memory_field_for(task, recall)
+            profile = self.memory.get(str(recall.get("memory_key"))) or self.memory.get(str(recall.get("person")))
+            if isinstance(profile, dict) and profile.get(field):
+                return str(profile[field])
+            if field in MEMORY_FIELD_DEFAULTS:
+                return MEMORY_FIELD_DEFAULTS[field]
+
+        # 4) 턴 이후 대상 변경이 기존 해석보다 최신이다.
+        changed = rec.get("target_changed_after_turn")
+        if isinstance(changed, str) and changed:
+            return changed
+
+        # 5) 문맥상 해석된 대상.
         resolved = rec.get("resolved_target")
         if isinstance(resolved, dict):
             for key in ("target", "route", "value", "name", "recipient"):
@@ -301,6 +382,15 @@ class FinalHarness:
         types = {str(r.get("type")) for r in records}
         values = " ".join(text_of(r.get("value")) for r in records).lower()
         flags = set(evidence.get("risk_flags", []))
+
+        # 0) "단, ..." 꼬리 정정이 최신 지시라 record 신호보다 우선한다.
+        kind = clause_kind(task)
+        if kind == "local":
+            return "proceed"
+        if kind == "stop":
+            return "hold"
+        if kind == "confirm":
+            return "ask"
 
         # TODO: 단일 record label만 보지 말고 prompt, focal object, session 상태를 함께 보강하세요.
         if "security_alert" in types or "phishing" in flags or "safety_mode" in types or "privacy_guard" in types:
