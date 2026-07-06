@@ -319,7 +319,7 @@ DOMAIN_TYPE_HINTS = (
 SAME_PLACE_CUES = ("같은 곳", "같은 채널", "같은 대상", "같은 수신처", "거기로", "아까 그")
 
 
-def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
+def resolve_focal_by_history(task: dict[str, Any], session: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """visible_history에서 확정/승인된 ref_code를 찾아 해당 object 반환 (최신 항목 우선)."""
     by_ref = {str((o.get("attrs") or {}).get("ref_code")): o for o in objects_of(task)}
     summaries = [str((item or {}).get("summary", "")) for item in history_in_turn_order(task)]
@@ -349,8 +349,31 @@ def resolve_focal_by_history(task: dict[str, Any]) -> dict[str, Any] | None:
         if fallback is None:
             survivors = [c for c in cands if scores[c] >= 0]
             if survivors:
-                pick = survivors[1] if len(survivors) >= 2 else survivors[0]
-                fallback = by_ref[pick]
+                prompt = str(task.get("prompt", ""))
+                typed: list[str] = []
+                for keywords, obj_type in DOMAIN_TYPE_HINTS:
+                    if any(k in prompt for k in keywords):
+                        typed = [c for c in survivors if str(by_ref[c].get("type")) == obj_type]
+                        break
+                last_id = str((session or {}).get("last_focal_id") or "")
+                carried = [c for c in survivors if last_id and str(by_ref[c].get("id")) == last_id]
+                token_pick: list[str] = []
+                prompt_tokens = {tok for tok in re.findall(r"[A-Za-z0-9가-힣_]+", prompt.lower()) if len(tok) >= 2}
+                if prompt_tokens:
+                    ranked = sorted(survivors, key=lambda c: -sum(1 for tok in prompt_tokens if tok in object_text(by_ref[c])))
+                    top_score = sum(1 for tok in prompt_tokens if tok in object_text(by_ref[ranked[0]]))
+                    second = sum(1 for tok in prompt_tokens if tok in object_text(by_ref[ranked[1]])) if len(ranked) >= 2 else -1
+                    if top_score > max(second, 0):
+                        token_pick = [ranked[0]]
+                if len(typed) == 1:
+                    fallback = by_ref[typed[0]]
+                elif carried:
+                    fallback = by_ref[carried[0]]
+                elif token_pick:
+                    fallback = by_ref[token_pick[0]]
+                else:
+                    pick = survivors[1] if len(survivors) >= 2 else survivors[0]
+                    fallback = by_ref[pick]
     return fallback
 
 
@@ -423,7 +446,7 @@ class FinalHarness:
             return by_ref[rec_codes.pop()]
 
         # 0-2) history에서 확정/승인된 ref_code가 지목되면 따른다.
-        focal = resolve_focal_by_history(task)
+        focal = resolve_focal_by_history(task, session)
         if focal is not None:
             return focal
 
