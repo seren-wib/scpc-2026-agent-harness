@@ -615,22 +615,19 @@ class FinalHarness:
 
     def decide_control(self, task: dict[str, Any], focal: dict[str, Any], target: str, evidence: dict[str, Any]) -> str:
         # 0) "단, ..." 꼬리 정정이 최신 지시라 record 신호보다 우선한다.
-        #    단 fb층(사전 밖 절의 느슨한 추정)의 confirm은 약신호라, record 사다리가
-        #    확정적 hold(보안/동의/전제 붕괴)를 내면 그쪽이 이긴다 — dev의 절은 전부
-        #    lex층이므로 이 중재는 dev 판정을 바꾸지 않는다.
-        kind, tier = clause_kind_tier(task)
+        #    이 우선권은 신호 강도와 무관하게 절대적이다: fb층 confirm을 record의
+        #    확정적 hold로 중재하는 실험은 서버 -0.010(전환 13건 전패)으로 반증됐다
+        #    (2026-07-08). 절이 있으면 절이 이긴다.
+        kind = clause_kind(task)
         if kind == "local":
             return "proceed"
         if kind == "stop":
             return "hold"
         if kind == "scope":
             return "amend"
-        if kind == "confirm" and tier == "lex":
-            return "ask"
-        rec_ctl = self.record_control(task, evidence)
         if kind == "confirm":
-            return "hold" if rec_ctl == "hold" else "ask"
-        return rec_ctl
+            return "ask"
+        return self.record_control(task, evidence)
 
     def record_control(self, task: dict[str, Any], evidence: dict[str, Any]) -> str:
         """절 신호 없이 record·정책 신호만으로 control을 판정하는 사다리."""

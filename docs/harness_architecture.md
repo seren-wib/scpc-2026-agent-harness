@@ -122,7 +122,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
   - **fb 층** (사전 밖 절의 느슨한 추정 — dev에 표본 0, screening에서만 발화): 중단어→stop, 확인/물어→confirm, 요약/제외/빼고→scope, **기본값 `"local"`** (꼬리 정정의 최빈 의도가 "내부 처리로 축소"이기 때문)
   - ⚠ 분기 귀속 실측(2026-07-07): screening 700 중 절 경로 432(61.7%), 그중 **fb층 284(40.6%)** — fb-default:local 131 / fb:confirm 81 / fb:scope 49 / fb:stop 23. dev는 전부 lex층이라 fb층 수정은 구조적으로 dev 무회귀.
 
-이 `clause_kind` 결과는 `infer_target`/`decide_control`/`build_policy`/`build_plan_events` 전부에서 최우선 분기로 쓰인다. 단 `decide_control`에서 **fb:confirm은 약신호로 격하**되어 record 사다리(`record_control`)가 확정적 hold를 내면 그쪽이 이긴다 (screening 실측: 81건 중 13건 ask→hold 전환).
+이 `clause_kind` 결과는 `infer_target`/`decide_control`/`build_policy`/`build_plan_events` 전부에서 최우선 분기로 쓰인다. **절 우선권은 신호 강도와 무관하게 절대적** — fb:confirm을 record hold로 중재하는 실험은 서버 −0.010(13건 전패, 2026-07-08)으로 반증되어 revert됐다. 절 kind vs record 우선순위는 확정 원칙으로 취급할 것.
 
 ---
 
@@ -150,7 +150,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 | 순서 | 조건 | 결과 | 비고 |
 |---|---|---|---|
-| 0 | `clause_kind` 존재 | local→proceed, stop→hold, scope→amend, confirm(lex)→ask | 절이 record 신호보다 최우선. **fb:confirm만 예외** — `record_control`이 hold면 hold, 아니면 ask (약신호 절은 확정적 record 신호에 진다) |
+| 0 | `clause_kind` 존재 | local→proceed, stop→hold, scope→amend, confirm→ask | 절이 record 신호보다 최우선 (**절대 원칙** — fb층 예외 실험은 서버 실측으로 반증·revert, 2026-07-08). 절 없으면 `record_control` 사다리로 |
 | 1 | `security_alert`/phishing 플래그, `safety_mode` 비정상, 동의 철회(consent record만) | `hold` | 안전/동의는 무조건 중단 |
 | 2 | `external_share_policy`/`health_share_policy`에 forbidden + doctor_note/health | `hold` | 건강 원문 등 공유 금지 |
 | 3 | `persistent_memory_write` | `proceed` | 메모리 기록은 그대로 진행 |
