@@ -11,11 +11,10 @@ docs/
 ├── harness_architecture.md       ← harness.py 상세 구조 (판단 사다리·절 파서·템플릿)
 ├── SCPC2026_Final_baseline.ipynb ← 공식 baseline 노트북. 셀 11 = 로컬 채점기 원본
 │                                    (score_local.py로 추출됨. PLAN_ARG 정규화 표도 여기)
-├── guide/
-│   ├── 핸드북.md                 ← 공식 문서 5개 통합본. 규칙·제출·채점·task/answer 구조·
-│   │                                plan args ontology 전부. 스펙 질문은 여기서 먼저
-│   └── 원본/                     ← 공식 문서 원문 5개 (01_문제설명 ~ 05_용어집).
-│                                    규정 해석이 갈릴 때 인용할 근거
+├── 핸드북.md                     ← 공식 문서 5개 통합본. 규칙·제출·채점·task/answer 구조·
+│                                    plan args ontology 전부. 스펙 질문은 여기서 먼저
+├── 원본/                         ← 공식 문서 원문 5개 (01_문제설명 ~ 05_용어집).
+│                                    규정 해석이 갈릴 때 인용할 근거 — 삭제 금지
 └── data/
     ├── dev_tasks.jsonl           연습 task 120개 — 정답 공개, 자유 분석 가능
     ├── dev_answers.json          위 120개의 참조 정답 (계획 필드 key가 expected_events임에 주의)
@@ -47,6 +46,6 @@ focal 정답 + target 또는 control 오답  →  scope/policy/plan 전부 0점
 ## 4. 읽는 순서 (새 세션 기준)
 
 1. 루트 `CLAUDE.md` — 현재 상태·작전·방법론 (필수)
-2. `guide/핸드북.md` — 스펙 레퍼런스 (필요할 때 조회)
+2. `핸드북.md` — 스펙 레퍼런스 (필요할 때 조회)
 3. `harness_architecture.md` — 코드 구조 파악
 4. baseline 노트북은 채점기 세부(정규화 alias 등)가 궁금할 때만
