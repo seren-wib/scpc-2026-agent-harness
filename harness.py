@@ -859,12 +859,17 @@ class FinalHarness:
         ]
 
     def user_response(self, control: str, target: str, scope: dict[str, Any], policy: dict[str, Any]) -> str:
+        # 문장 어휘는 dev 생성기 표현 빈도에 정렬 (공유 범위/수신처/처리/먼저 확인/
+        # 세부값 제외/상태만 갱신) — 참조 응답이 같은 생성기 어휘로 만들어졌을
+        # 가능성에 베팅하는 semantic 축 정렬.
         if control == "hold":
-            return "최신 보안·동의·정책 신호로 처리 전제가 무효화되어 이 요청은 보류합니다."
+            return "처리 전제가 무효화되어 이 요청은 보류하고 진행하지 않습니다."
         if control == "ask":
-            return "대상 또는 허용 범위가 확정되지 않아 진행 전에 사용자 확인이 필요합니다."
+            return "수신처와 공유 범위가 아직 확정되지 않아 처리 전에 사용자에게 먼저 확인합니다."
         if control == "amend":
-            return f"민감 정보를 제외한 요약만 {target}(으)로 전달합니다."
+            return f"식별 가능한 세부값을 제외한 요약만 {target}(으)로 공유합니다."
         if scope.get("mode") == "status_only":
-            return "외부로 보내지 않고 기기 내부 상태만 업데이트합니다."
-        return f"요청 범위 그대로 {target}(으)로 진행합니다."
+            return "외부로 공유하지 않고 기기 내부 상태만 갱신합니다."
+        if scope.get("mode") == "raw":
+            return f"원문 그대로 {target}(으)로 공유합니다."
+        return f"요약을 {target}(으)로 전달합니다."
