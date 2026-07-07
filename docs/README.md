@@ -41,7 +41,7 @@ focal 정답 + target 또는 control 오답  →  scope/policy/plan 전부 0점
 - 답안 생성은 제공된 FixedSLMClient + 자작 규칙 로직만. 외부 LLM/API 사용 = 실격
 - 평가 데이터(screening) 수작업 라벨링·패턴 분석·정답 추정 = 실격
 - task_id 하드코딩 = 무효. dev 문장 통암기 = 비공개 검증에서 자멸
-- 제출: submission.csv 1행 1컬럼, UTF-8, 하루 5회, 최종 순위는 직접 선택한 파일 1개
+- 제출: submission.csv 1행 1컬럼, UTF-8, 하루 3회(5회에서 축소, 2026-07-07 공지), 최종 순위는 직접 선택한 파일 1개
 
 ## 4. 읽는 순서 (새 세션 기준)
 

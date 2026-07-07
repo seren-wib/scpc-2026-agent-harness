@@ -117,14 +117,12 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 핸드북 상 가장 최신 지시로 취급되는 `단,`/`다만,` 꼬리 구절 처리. **이전 버전은 이 파서가 268개 케이스에서 실패해 -0.17 손실을 냈던 지점**(마커는 잡히는데 절 내용 어휘가 사전 밖 → `clause_kind`가 `None`으로 흘러 record 미끼로 오판됨).
 
 - `final_clause(task)`: prompt 우선, 없으면 **최신 turn**의 history summary에서만 `단,`/`다만,` 마커 검색 (옛 턴의 절이 현재 턴을 납치하지 않도록 turn 필터링)
-- `clause_kind(task)`: 절 텍스트를 키워드 사전 4종에 매칭
-  - `CLAUSE_LOCAL` → `"local"` (로컬 상태만 갱신, 외부 전송 금지 계열)
-  - `CLAUSE_STOP` → `"stop"` (중단/금지 계열)
-  - `CLAUSE_SCOPE` → `"scope"` (요약만/세부값 제외 계열)
-  - `CLAUSE_CONFIRM` → `"confirm"` (재확인 필요 계열)
-  - 사전 매칭 실패 시 느슨한 폴백: 중단어→stop, 확인/물어→confirm, 요약/제외/빼고→scope, **기본값 `"local"`** (꼬리 정정의 최빈 의도가 "내부 처리로 축소"이기 때문)
+- `clause_kind_tier(task)`: 절 텍스트를 (kind, 신뢰 층위) 쌍으로 판정. `clause_kind()`는 kind만 주는 래퍼.
+  - **lex 층** (dev 검증된 강신호): `CLAUSE_LOCAL`→local, `CLAUSE_STOP` 또는 `clause_invalidated`(허용계 명사×소멸계 술어 공존, 불확실 표지 가드)→stop, `CLAUSE_SCOPE`→scope, `clause_prohibited`(행위 금지형, scope/말고 리다이렉트 거부권)→stop, `CLAUSE_CONFIRM`→confirm
+  - **fb 층** (사전 밖 절의 느슨한 추정 — dev에 표본 0, screening에서만 발화): 중단어→stop, 확인/물어→confirm, 요약/제외/빼고→scope, **기본값 `"local"`** (꼬리 정정의 최빈 의도가 "내부 처리로 축소"이기 때문)
+  - ⚠ 분기 귀속 실측(2026-07-07): screening 700 중 절 경로 432(61.7%), 그중 **fb층 284(40.6%)** — fb-default:local 131 / fb:confirm 81 / fb:scope 49 / fb:stop 23. dev는 전부 lex층이라 fb층 수정은 구조적으로 dev 무회귀.
 
-이 `clause_kind` 결과는 `infer_target`/`decide_control`/`build_policy`/`build_plan_events` 전부에서 최우선 분기로 쓰인다.
+이 `clause_kind` 결과는 `infer_target`/`decide_control`/`build_policy`/`build_plan_events` 전부에서 최우선 분기로 쓰인다. 단 `decide_control`에서 **fb:confirm은 약신호로 격하**되어 record 사다리(`record_control`)가 확정적 hold를 내면 그쪽이 이긴다 (screening 실측: 81건 중 13건 ask→hold 전환).
 
 ---
 
@@ -152,7 +150,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 | 순서 | 조건 | 결과 | 비고 |
 |---|---|---|---|
-| 0 | `clause_kind` 존재 | local→proceed, stop→hold, scope→amend, confirm→ask | 절이 record 신호보다 최우선 |
+| 0 | `clause_kind` 존재 | local→proceed, stop→hold, scope→amend, confirm(lex)→ask | 절이 record 신호보다 최우선. **fb:confirm만 예외** — `record_control`이 hold면 hold, 아니면 ask (약신호 절은 확정적 record 신호에 진다) |
 | 1 | `security_alert`/phishing 플래그, `safety_mode` 비정상, 동의 철회(consent record만) | `hold` | 안전/동의는 무조건 중단 |
 | 2 | `external_share_policy`/`health_share_policy`에 forbidden + doctor_note/health | `hold` | 건강 원문 등 공유 금지 |
 | 3 | `persistent_memory_write` | `proceed` | 메모리 기록은 그대로 진행 |

@@ -246,6 +246,35 @@ CLAUSE_SCOPE = ("요약만", "제외한 요약", "세부값을 제외", "식별 
 
 CLAUSE_MARKERS = ("단,", "다만,")
 
+# '기존 허용의 무효화' 단정: dev의 모든 hold 절이 공유하는 의미 신호.
+# 허용계 명사와 소멸계 술어의 공존으로 판정한다. 단 '~는지/여부' 등 불확실
+# 표지가 붙으면 무효화 단정이 아니라 미확정 진술(confirm 계열)이므로 제외 —
+# dev의 confirm 절("확정되지 않았", "여부가 미확정")은 전부 이 가드에 걸린다.
+INVALID_NOUNS = ("허용", "승인", "동의", "전제", "조건", "근거", "권한", "자격")
+INVALID_PREDS = ("무효", "취소되", "취소된", "철회", "깨졌", "깨진", "사라졌", "만료",
+                 "상실", "효력을 잃", "유효하지 않", "더 이상 유효")
+UNCERTAIN_MARKS = ("는지", "여부", "미확정", "확정되지 않")
+
+# 행위 금지형: dev의 gold-ask 절에는 금지형이 전무하고, 금지형을 품은 절은 전부
+# gold-hold다 ("확인 전에는 처리하지 않는다" 판례 포함). '확인' 어휘가 있어도
+# 금지형이면 요청형(confirm)이 아니라 중지 지시다.
+CLAUSE_PROHIBIT = ("면 안 되", "면 안 된", "면 안된", "서는 안 되", "하지 않는다", "지 마", "지 말")
+# 금지형이라도 긍정 대안이 함께 오면 중지가 아니라 방향 전환이다:
+# scope 단서(요약/제외)면 amend 계열, '말고' 연결이면 local 계열로 흘려보낸다.
+PROHIBIT_VETO = ("요약", "제외", "빼고", "말고")
+
+
+def clause_invalidated(clause: str) -> bool:
+    if any(u in clause for u in UNCERTAIN_MARKS):
+        return False
+    return any(n in clause for n in INVALID_NOUNS) and any(p in clause for p in INVALID_PREDS)
+
+
+def clause_prohibited(clause: str) -> bool:
+    if any(v in clause for v in PROHIBIT_VETO):
+        return False
+    return any(p in clause for p in CLAUSE_PROHIBIT)
+
 
 def final_clause(task: dict[str, Any]) -> str:
     """prompt(현재 발화) 우선, 없으면 최신 history에서 '단,' 꼬리 구절을 찾는다."""
@@ -264,27 +293,35 @@ def final_clause(task: dict[str, Any]) -> str:
     return ""
 
 
-def clause_kind(task: dict[str, Any]) -> str | None:
+def clause_kind_tier(task: dict[str, Any]) -> tuple[str | None, str | None]:
+    """절 의도와 신뢰 층위를 반환한다: lex = dev 검증된 사전 매칭(강신호),
+    fb = 사전 밖 절의 느슨한 단서 추정(약신호 — dev에 표본이 없어 미검증)."""
     clause = final_clause(task)
     if not clause:
-        return None
+        return None, None
     if any(k in clause for k in CLAUSE_LOCAL):
-        return "local"
-    if any(k in clause for k in CLAUSE_STOP):
-        return "stop"
+        return "local", "lex"
+    if any(k in clause for k in CLAUSE_STOP) or clause_invalidated(clause):
+        return "stop", "lex"
     if any(k in clause for k in CLAUSE_SCOPE):
-        return "scope"
+        return "scope", "lex"
+    if clause_prohibited(clause):
+        return "stop", "lex"
     if any(k in clause for k in CLAUSE_CONFIRM):
-        return "confirm"
+        return "confirm", "lex"
     # 마커는 잡혔는데 내용 어휘가 사전 밖이면 미분류로 흘리지 않는다. 느슨한 단서로
     # 의도를 추정하고, 꼬리 정정의 최빈 의도인 '내부 처리로 축소'(local)를 기본값으로 둔다.
     if any(k in clause for k in ("중단", "멈추", "막아", "불가", "보류")):
-        return "stop"
+        return "stop", "fb"
     if "확인" in clause or "물어" in clause:
-        return "confirm"
+        return "confirm", "fb"
     if any(k in clause for k in ("요약", "제외", "빼고")):
-        return "scope"
-    return "local"
+        return "scope", "fb"
+    return "local", "fb"
+
+
+def clause_kind(task: dict[str, Any]) -> str | None:
+    return clause_kind_tier(task)[0]
 
 
 def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
@@ -577,21 +614,30 @@ class FinalHarness:
         return str(session.get("last_target") or "user")
 
     def decide_control(self, task: dict[str, Any], focal: dict[str, Any], target: str, evidence: dict[str, Any]) -> str:
-        records = records_of(task)
-        types = {str(r.get("type")) for r in records}
-        values = " ".join(text_of(r.get("value")) for r in records).lower()
-        flags = set(evidence.get("risk_flags", []))
-
         # 0) "단, ..." 꼬리 정정이 최신 지시라 record 신호보다 우선한다.
-        kind = clause_kind(task)
+        #    단 fb층(사전 밖 절의 느슨한 추정)의 confirm은 약신호라, record 사다리가
+        #    확정적 hold(보안/동의/전제 붕괴)를 내면 그쪽이 이긴다 — dev의 절은 전부
+        #    lex층이므로 이 중재는 dev 판정을 바꾸지 않는다.
+        kind, tier = clause_kind_tier(task)
         if kind == "local":
             return "proceed"
         if kind == "stop":
             return "hold"
         if kind == "scope":
             return "amend"
-        if kind == "confirm":
+        if kind == "confirm" and tier == "lex":
             return "ask"
+        rec_ctl = self.record_control(task, evidence)
+        if kind == "confirm":
+            return "hold" if rec_ctl == "hold" else "ask"
+        return rec_ctl
+
+    def record_control(self, task: dict[str, Any], evidence: dict[str, Any]) -> str:
+        """절 신호 없이 record·정책 신호만으로 control을 판정하는 사다리."""
+        records = records_of(task)
+        types = {str(r.get("type")) for r in records}
+        values = " ".join(text_of(r.get("value")) for r in records).lower()
+        flags = set(evidence.get("risk_flags", []))
 
         rec = record_map(records)
 
