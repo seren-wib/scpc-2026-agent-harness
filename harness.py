@@ -703,8 +703,14 @@ class FinalHarness:
             if order == "boundary_after_authority":
                 return "ask"
 
-        # 5-3) 표면 수신처와 해석된 수신처가 둘 다 최신이면 사람이 골라야 한다.
+        # 5-3) 표면 수신처와 해석된 수신처가 둘 다 최신인 경우: route_binding_order가
+        #      경계 갱신을 최신 심판으로 지목하면(boundary_after_authority + local_update
+        #      경계) 모호성은 경계가 이미 해소한 것 — 축소 전달(amend). 아니면 확인(ask).
+        #      dev 실측: amend 2건(boundary_after_authority) / ask 1건(authority_after_candidates).
         if str(rec.get("ambiguous_target", "")) == "surface_recipient_and_resolved_target_both_recent":
+            if str(rec.get("route_binding_order", "")) == "boundary_after_authority" \
+                    and str(rec.get("share_boundary_update", "")).startswith("local_update"):
+                return "amend"
             return "ask"
         if any(t in types for t in ("amount_changed", "merchant_verification", "memory_conflict", "duration_ambiguous")):
             return "ask"
@@ -750,7 +756,9 @@ class FinalHarness:
             return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": ["raw_quote"], "requires_user_confirmation": True}
         if control == "amend":
             excluded = self.sensitive_fields_of(focal)
-            ambiguous = "ambiguous_target" in rec or "ambiguous_focal" in rec
+            # 사용자 확인은 target 모호(누구에게 보낼지)일 때만 요구한다. focal 모호는
+            # 시스템이 풀 문제라 확인 대상이 아니다 (dev 120/120 일치).
+            ambiguous = "ambiguous_target" in rec
             return {"mode": "redacted", "allowed_fields": ["summary"], "excluded_fields": excluded or ["raw_quote"], "requires_user_confirmation": ambiguous}
 
         # proceed
@@ -794,10 +802,16 @@ class FinalHarness:
             flags.update(("external_share", "minimal_disclosure"))
 
         violations = ["precondition_changed_ignored"] if control == "hold" else []
+        # 확인 요구는 '사용자 결정 대기'의 의미 신호다: ask 자체, 또는 진행/축소
+        # 중이라도 target 모호(누구에게)나 user_binding_pending(사용자 바인딩 대기)이
+        # 걸린 경우. focal 모호·시스템측 미결(authority_incomplete)은 확인 불요.
+        # hold는 항상 False (dev 120/120 일치 실측).
+        pending = "user_binding_pending" in str(rec.get("dispatch_authority_check", ""))
         return {
             "risk_flags": sorted(flags),
             "violations": violations,
-            "requires_confirmation": control == "ask",
+            "requires_confirmation": control == "ask"
+            or (control in ("proceed", "amend") and ("ambiguous_target" in rec or pending)),
         }
 
     def build_plan_events(self, task: dict[str, Any], focal_id: str, target: str, control: str, scope: dict[str, Any], policy: dict[str, Any]) -> list[dict[str, Any]]:
