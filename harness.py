@@ -781,13 +781,18 @@ class FinalHarness:
             flags.add("target_ambiguity")
         if "ambiguous_focal" in rec:
             flags.add("ambiguous_focal")
-        if self.sensitive_fields_of(focal):
+        # 민감 내용: focal의 contains 민감 필드 또는 record의 doctor_note 언급
+        # (건강 원문 정책이 걸린 흐름은 contains가 비어도 민감 취급 — dev 120/120).
+        rec_values = " ".join(text_of(r.get("value")) for r in records_of(task)).lower()
+        if self.sensitive_fields_of(focal) or "doctor_note" in rec_values:
             flags.add("sensitive_content")
         # 외부 목적지로 향하는 요청이면 외부 공유 위험이 있다.
         if target and target not in ("memory_store", "user"):
             flags.add("external_share")
-        # 공유 경계가 갱신된 흐름은 전제가 바뀐 것이다.
-        if "share_boundary_update" in rec:
+        # 공유 경계가 '실제로 변경'된 흐름만 전제 변경이다. dispatch_blocked류는
+        # 동결 상태(아직 아무것도 안 바뀜)라 전제 변경이 아니다 (dev 42/42).
+        sbu = str(rec.get("share_boundary_update", ""))
+        if sbu and "blocked" not in sbu:
             flags.add("precondition_changed")
         # 최신 정정/경계로 로컬 처리 범위가 걸린 흐름.
         if kind in ("local", "stop", "confirm") or "persistent_memory_write" in rec \
@@ -821,8 +826,11 @@ class FinalHarness:
                 {"verb": "guard", "target": focal_id, "args": {"reason": "precondition_invalidated"}},
             ]
         if control == "ask":
-            # 꼬리 정정("단, 확인") 기반이면 전제 변경 확인, record 기반이면 route 해석 확인.
-            if clause_kind(task) == "confirm":
+            # 확인 사유는 절 유무가 아니라 경계 변경 여부가 가른다: 공유 경계가 실제로
+            # 변경된 흐름이면 '전제 변경 확인', 아니면 'route 해석 확인' (dev ask 26/26).
+            rec = record_map(records_of(task))
+            sbu = str(rec.get("share_boundary_update", ""))
+            if sbu and "blocked" not in sbu:
                 purpose, reason = "clarify_precondition", "precondition_changed"
             else:
                 purpose = reason = "route_resolution_required"
