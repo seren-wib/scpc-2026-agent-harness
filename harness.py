@@ -703,13 +703,12 @@ class FinalHarness:
             if order == "boundary_after_authority":
                 return "ask"
 
-        # 5-3) 표면 수신처와 해석된 수신처가 둘 다 최신인 경우: route_binding_order가
-        #      경계 갱신을 최신 심판으로 지목하면(boundary_after_authority + local_update
-        #      경계) 모호성은 경계가 이미 해소한 것 — 축소 전달(amend). 아니면 확인(ask).
-        #      dev 실측: amend 2건(boundary_after_authority) / ask 1건(authority_after_candidates).
+        # 5-3) 표면 수신처와 해석된 수신처가 둘 다 최신인 경우: 공유 경계가 local_update
+        #      계열로 갱신됐으면 모호성은 경계가 이미 해소한 것 — 축소 전달(amend).
+        #      아니면 확인(ask). dev 실측 3/3 + 서버 검증(2026-07-08 발 2). order 조건은
+        #      dev에서 boundary 값과 완전 상관이라 판별력이 없어 제거 (screening +8건).
         if str(rec.get("ambiguous_target", "")) == "surface_recipient_and_resolved_target_both_recent":
-            if str(rec.get("route_binding_order", "")) == "boundary_after_authority" \
-                    and str(rec.get("share_boundary_update", "")).startswith("local_update"):
+            if str(rec.get("share_boundary_update", "")).startswith("local_update"):
                 return "amend"
             return "ask"
         if any(t in types for t in ("amount_changed", "merchant_verification", "memory_conflict", "duration_ambiguous")):
