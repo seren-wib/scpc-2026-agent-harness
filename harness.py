@@ -705,9 +705,9 @@ class FinalHarness:
 
         # 5-2) guardrail 사다리: route_binding_order가 어느 record가 최신 심판인지 알려준다.
         #      authority가 최신이면 그 확정 여부가 결정하고, boundary가 최신이면 review 미결로 확인이 필요하다.
+        authority = str(rec.get("dispatch_authority_check", ""))
         if "guardrail_ladder_signal" in rec and ("ambiguous_target" in rec or "ambiguous_focal" in rec):
             order = str(rec.get("route_binding_order", ""))
-            authority = str(rec.get("dispatch_authority_check", ""))
             if order == "authority_after_candidates":
                 if "confirmed" in authority:
                     return "proceed"
@@ -716,22 +716,35 @@ class FinalHarness:
             if order == "boundary_after_authority":
                 return "ask"
 
-        # 5-3) 표면 수신처와 해석된 수신처가 둘 다 최신인 경우: route_binding_order가
-        #      경계 갱신을 최신 심판으로 지목하면(boundary_after_authority + local_update
-        #      경계) 모호성은 경계가 이미 해소한 것 — 축소 전달(amend). 아니면 확인(ask).
-        #      ⚠ order 조건 제거 실험(boundary 단독)은 서버 음수(2026-07-09 묶음) —
-        #      생성기는 order를 실제로 본다. 교집합 유지.
+        # 5-3) 경계 격자 — record 경로의 생성기 구조 (dev record-path 4중주 21건 전수 일치):
+        #      share_boundary_update 값이 기본 판정을 그대로 적어둔다.
+        #        local_update → proceed(내부 갱신) / redacted_external → amend(축소 전달) /
+        #        dispatch_blocked → ask(바인딩 대기) / +user_binding_pending → hold(사용자 대기).
+        #      target 모호(누구에게)는 사용자 결정 사안이라 한 단계 격상하고, focal 모호는
+        #      시스템이 풀 문제라 격상하지 않는다 (dev: focal행 proceed/amend/ask/hold 단조,
+        #      target행 정확히 +1 계단). local_update는 order=boundary_after_authority일 때만
+        #      0단 — order가 authority를 최신 심판으로 지목하면 경계 미확정이라 1단으로 승격
+        #      (order 조건 제거는 서버 실측 음수, 2026-07-09 — 생성기는 order를 실제로 본다).
+        boundary = str(rec.get("share_boundary_update", ""))
+        state = None
+        if boundary.startswith("local_update"):
+            state = 0 if str(rec.get("route_binding_order", "")) == "boundary_after_authority" else 1
+        elif boundary.startswith("redacted_external"):
+            state = 1
+        elif boundary.startswith("dispatch_blocked"):
+            state = 3 if "user_binding_pending" in authority else 2
+        if state is not None:
+            severity = state + (1 if "ambiguous_target" in rec else 0)
+            return ("proceed", "amend", "ask", "hold")[min(severity, 3)]
+        # 경계 record가 아예 없는 both_recent: 판정이 안 적힌 target 모호는 확인이 기본
+        # (발 2 서버 검증 구성의 else-ask 유지 — 격자 도입으로 이 가족을 건드리지 않는다).
         if str(rec.get("ambiguous_target", "")) == "surface_recipient_and_resolved_target_both_recent":
-            if str(rec.get("route_binding_order", "")) == "boundary_after_authority" \
-                    and str(rec.get("share_boundary_update", "")).startswith("local_update"):
-                return "amend"
             return "ask"
         if any(t in types for t in ("amount_changed", "merchant_verification", "memory_conflict", "duration_ambiguous")):
             return "ask"
 
-        # 6) 모호성: route/authority record가 해소했으면 넘어가고, 아니면 확인/중단.
+        # 6) 경계 record가 없는 잔여 모호성: authority가 해소했으면 아래 정책층으로, 미결이면 확인/중단.
         snapshot = str(rec.get("route_candidate_snapshot", ""))
-        authority = str(rec.get("dispatch_authority_check", ""))
         ambiguous = "ambiguous_target" in rec or "ambiguous_focal" in rec
         resolved = "single" in snapshot or "confirmed" in authority
         if ambiguous and not resolved:
