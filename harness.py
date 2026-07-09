@@ -763,7 +763,13 @@ class FinalHarness:
         # proceed
         target_is_local = "persistent_memory_write" in rec or clause_kind(task) == "local"
         if target_is_local or str(rec.get("share_boundary_update", "")).startswith("local_update"):
-            excluded = ["location", "numeric_value", "raw_quote"] if strict else []
+            # personal_memory의 공유 제약 문장("~은 제외한다", "수치 쓰지 말고 상태만")은
+            # strict와 같은 격의 제외 지시다 (dev 실측: 비strict인데 gold가 제외 3종을
+            # 가진 3건 전부 pm 제약 보유).
+            pm_restricts = any(
+                any(k in str((m or {}).get("text", "")) for k in ("제외", "쓰지 말", "상태만"))
+                for m in task.get("personal_memory") or [])
+            excluded = ["location", "numeric_value", "raw_quote"] if (strict or pm_restricts) else []
             return {"mode": "status_only", "allowed_fields": ["status"], "excluded_fields": excluded, "requires_user_confirmation": False}
         if not strict:
             return {"mode": "raw", "allowed_fields": ["summary", "title"], "excluded_fields": [], "requires_user_confirmation": False}
