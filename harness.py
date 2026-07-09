@@ -565,14 +565,8 @@ class FinalHarness:
         attrs = focal.get("attrs") or {}
 
         # 1) "단, ..." 꼬리 정정이 가장 최신 지시: 내부 갱신 → memory_store, 확인/중지 → user.
-        #    단 fb-default local(사전 밖 절의 기본값 추정)은 '내부로 축소' 근거가 어휘에
-        #    없으므로 target은 절 없는 경로로 해석한다 — 절이 local 정정이 아니라
-        #    평범한 진행 지시라면 수신처는 record/attrs에 있다 (Day 3 발 2 가설).
-        kind, tier = clause_kind_tier(task)
-        if kind == "local" and tier == "lex":
-            return "memory_store"
-        # fb-default local이라도 record가 로컬 경계를 증언하면 로컬 유지 (scope와 정합).
-        if kind == "local" and str(rec.get("share_boundary_update", "")).startswith("local_update"):
+        kind = clause_kind(task)
+        if kind == "local":
             return "memory_store"
         if kind in ("stop", "confirm"):
             return "user"
@@ -767,8 +761,8 @@ class FinalHarness:
             ambiguous = "ambiguous_target" in rec
             return {"mode": "redacted", "allowed_fields": ["summary"], "excluded_fields": excluded or ["raw_quote"], "requires_user_confirmation": ambiguous}
 
-        # proceed — fb-default local은 내부 축소 근거가 없으므로 로컬 처리로 보지 않는다.
-        target_is_local = "persistent_memory_write" in rec or clause_kind_tier(task) == ("local", "lex")
+        # proceed
+        target_is_local = "persistent_memory_write" in rec or clause_kind(task) == "local"
         if target_is_local or str(rec.get("share_boundary_update", "")).startswith("local_update"):
             excluded = ["location", "numeric_value", "raw_quote"] if strict else []
             return {"mode": "status_only", "allowed_fields": ["status"], "excluded_fields": excluded, "requires_user_confirmation": False}
@@ -795,10 +789,8 @@ class FinalHarness:
         # 공유 경계가 갱신된 흐름은 전제가 바뀐 것이다.
         if "share_boundary_update" in rec:
             flags.add("precondition_changed")
-        # 최신 정정/경계로 로컬 처리 범위가 걸린 흐름 (fb-default local은 로컬 근거 없음).
-        _, tier = clause_kind_tier(task)
-        if (kind == "local" and tier == "lex") or kind in ("stop", "confirm") \
-                or "persistent_memory_write" in rec \
+        # 최신 정정/경계로 로컬 처리 범위가 걸린 흐름.
+        if kind in ("local", "stop", "confirm") or "persistent_memory_write" in rec \
                 or str(rec.get("share_boundary_update", "")).startswith("local_update"):
             flags.add("local_only")
 
