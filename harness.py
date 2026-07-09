@@ -716,12 +716,14 @@ class FinalHarness:
             if order == "boundary_after_authority":
                 return "ask"
 
-        # 5-3) 표면 수신처와 해석된 수신처가 둘 다 최신인 경우: 공유 경계가 local_update
-        #      계열로 갱신됐으면 모호성은 경계가 이미 해소한 것 — 축소 전달(amend).
-        #      아니면 확인(ask). dev 실측 3/3 + 서버 검증(2026-07-08 발 2). order 조건은
-        #      dev에서 boundary 값과 완전 상관이라 판별력이 없어 제거 (screening +8건).
+        # 5-3) 표면 수신처와 해석된 수신처가 둘 다 최신인 경우: route_binding_order가
+        #      경계 갱신을 최신 심판으로 지목하면(boundary_after_authority + local_update
+        #      경계) 모호성은 경계가 이미 해소한 것 — 축소 전달(amend). 아니면 확인(ask).
+        #      ⚠ order 조건 제거 실험(boundary 단독)은 서버 음수(2026-07-09 묶음) —
+        #      생성기는 order를 실제로 본다. 교집합 유지.
         if str(rec.get("ambiguous_target", "")) == "surface_recipient_and_resolved_target_both_recent":
-            if str(rec.get("share_boundary_update", "")).startswith("local_update"):
+            if str(rec.get("route_binding_order", "")) == "boundary_after_authority" \
+                    and str(rec.get("share_boundary_update", "")).startswith("local_update"):
                 return "amend"
             return "ask"
         if any(t in types for t in ("amount_changed", "merchant_verification", "memory_conflict", "duration_ambiguous")):
@@ -776,13 +778,9 @@ class FinalHarness:
         # proceed
         target_is_local = "persistent_memory_write" in rec or clause_kind(task) == "local"
         if target_is_local or str(rec.get("share_boundary_update", "")).startswith("local_update"):
-            # personal_memory의 공유 제약 문장("~은 제외한다", "수치 쓰지 말고 상태만")은
-            # strict와 같은 격의 제외 지시다 (dev 실측: 비strict인데 gold가 제외 3종을
-            # 가진 3건 전부 pm 제약 보유).
-            pm_restricts = any(
-                any(k in str((m or {}).get("text", "")) for k in ("제외", "쓰지 말", "상태만"))
-                for m in task.get("personal_memory") or [])
-            excluded = ["location", "numeric_value", "raw_quote"] if (strict or pm_restricts) else []
+            # ⚠ personal_memory 제약 문장 → 제외 3종 규칙(dev 3/3)은 2026-07-09 묶음
+            #   서버 음수에 포함되어 revert. 성분 미분해 — 재도전 시 단독 계측 필요.
+            excluded = ["location", "numeric_value", "raw_quote"] if strict else []
             return {"mode": "status_only", "allowed_fields": ["status"], "excluded_fields": excluded, "requires_user_confirmation": False}
         if not strict:
             return {"mode": "raw", "allowed_fields": ["summary", "title"], "excluded_fields": [], "requires_user_confirmation": False}
