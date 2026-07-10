@@ -729,7 +729,7 @@ class FinalHarness:
         state = None
         if boundary.startswith("local_update"):
             state = 0 if str(rec.get("route_binding_order", "")) == "boundary_after_authority" else 1
-        elif boundary.startswith("redacted_external"):
+        elif boundary.startswith("redacted"):
             state = 1
         elif boundary.startswith("dispatch_blocked"):
             state = 3 if "user_binding_pending" in authority else 2
