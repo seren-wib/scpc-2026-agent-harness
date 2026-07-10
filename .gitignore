@@ -37,6 +37,7 @@ trace.jsonl
 
 # --- SCPC 산출물 / 보관용 중복본 ---
 submission.csv
+submission_*.csv
 docs/_archive/
 
 # --- Editor / OS junk ---
