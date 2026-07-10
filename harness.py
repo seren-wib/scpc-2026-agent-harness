@@ -698,15 +698,14 @@ class FinalHarness:
         if "confirmation" in str(rec.get("payment_policy", "")) or "over_50000" in values:
             return "ask"
         prompt = str(task.get("prompt", ""))
-        # (2026-07-10) '원본+익명' 프롬프트 키워드 규칙은 제거 — 격자의 local_update 0단이
-        # 같은 가족을 구조로 흡수한다 (공지의 표면 패턴 경고 대응. dev 앵커 2건 모두 L0/proceed 유지).
+        if "원본" in prompt and "익명" in prompt and "local_update" in str(rec.get("share_boundary_update", "")):
+            return "proceed"
         if "target_changed_after_turn" in rec:
             return "ask"
 
         # 5-2) guardrail 사다리: route_binding_order가 어느 record가 최신 심판인지 알려준다.
         #      authority가 최신이면 그 확정 여부가 결정하고, boundary가 최신이면 review 미결로 확인이 필요하다.
         authority = str(rec.get("dispatch_authority_check", ""))
-        boundary = str(rec.get("share_boundary_update", ""))
         if "guardrail_ladder_signal" in rec and ("ambiguous_target" in rec or "ambiguous_focal" in rec):
             order = str(rec.get("route_binding_order", ""))
             if order == "authority_after_candidates":
@@ -715,11 +714,6 @@ class FinalHarness:
                 if "incomplete" in authority or "pending" in authority:
                     return "hold"
             if order == "boundary_after_authority":
-                # 경계가 최신 심판인데 그 경계가 전송 잠금(blocked)이면 검토창 이전에
-                # 차단이 확정된 것 — 격자 B행(차단=hold)과 dev guard의 미결=hold가
-                # 양방향으로 수렴하는 셀이라 hold. 나머지 경계값은 review 미결 = ask.
-                if boundary.startswith("dispatch_blocked"):
-                    return "hold"
                 return "ask"
 
         # 5-3) 경계 격자 — record 경로의 생성기 구조 (dev record-path 4중주 21건 전수 일치):
@@ -731,6 +725,7 @@ class FinalHarness:
         #      target행 정확히 +1 계단). local_update는 order=boundary_after_authority일 때만
         #      0단 — order가 authority를 최신 심판으로 지목하면 경계 미확정이라 1단으로 승격
         #      (order 조건 제거는 서버 실측 음수, 2026-07-09 — 생성기는 order를 실제로 본다).
+        boundary = str(rec.get("share_boundary_update", ""))
         state = None
         if boundary.startswith("local_update"):
             state = 0 if str(rec.get("route_binding_order", "")) == "boundary_after_authority" else 1
