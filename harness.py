@@ -698,6 +698,9 @@ class FinalHarness:
         if "confirmation" in str(rec.get("payment_policy", "")) or "over_50000" in values:
             return "ask"
         prompt = str(task.get("prompt", ""))
+        # ⚠ '원본+익명' 프롬프트 규칙을 격자 L0/L1로 흡수하는 실험은 서버 음수(2026-07-10
+        #    발 3, 10건 중 ~7 오답 추정). 이 키워드는 표면 무늬가 아니라 실신호 — 프롬프트가
+        #    익명화를 명시하면 order와 무관하게 local 진행이 정답. 유지할 것.
         if "원본" in prompt and "익명" in prompt and "local_update" in str(rec.get("share_boundary_update", "")):
             return "proceed"
         if "target_changed_after_turn" in rec:
@@ -705,6 +708,8 @@ class FinalHarness:
 
         # 5-2) guardrail 사다리: route_binding_order가 어느 record가 최신 심판인지 알려준다.
         #      authority가 최신이면 그 확정 여부가 결정하고, boundary가 최신이면 review 미결로 확인이 필요하다.
+        #      ⚠ boundary-최신 분기를 경계값으로 세분(blocked→hold)하는 실험도 같은 발 3
+        #      음수에 포함 — guard의 boundary-최신은 경계값 무관 blanket ask가 정답.
         authority = str(rec.get("dispatch_authority_check", ""))
         if "guardrail_ladder_signal" in rec and ("ambiguous_target" in rec or "ambiguous_focal" in rec):
             order = str(rec.get("route_binding_order", ""))
