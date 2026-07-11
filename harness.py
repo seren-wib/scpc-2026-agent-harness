@@ -798,8 +798,15 @@ class FinalHarness:
         if target_is_local or str(rec.get("share_boundary_update", "")).startswith("local_update"):
             # ⚠ personal_memory 제약 문장 → 제외 3종 규칙(dev 3/3)은 2026-07-09 묶음
             #   서버 음수에 포함되어 revert. 성분 미분해 — 재도전 시 단독 계측 필요.
-            excluded = ["location", "numeric_value", "raw_quote"] if strict else []
+            # 내부 갱신이라도 기록 자체가 민감 필드를 담고 있으면 그 필드는 상태 갱신
+            # 범위에서 제외된다: strict 세션은 고정 3종, 그 외는 focal contains의
+            # 민감 필드 매핑(amend와 동일한 원리). dev 44/44 전수 정합.
+            excluded = ["location", "numeric_value", "raw_quote"] if strict else self.sensitive_fields_of(focal)
             return {"mode": "status_only", "allowed_fields": ["status"], "excluded_fields": excluded, "requires_user_confirmation": False}
+        # 외향 진행에서 공유 경계가 이미 redacted로 갱신된 흐름은 경계가 민감값을
+        # 걸러 준 상태라 원문 전달이 허용된다 (dev 2/2, 반례 셀 없음).
+        if str(rec.get("share_boundary_update", "")).startswith("redacted"):
+            return {"mode": "raw", "allowed_fields": ["summary", "title"], "excluded_fields": [], "requires_user_confirmation": False}
         if not strict:
             return {"mode": "raw", "allowed_fields": ["summary", "title"], "excluded_fields": [], "requires_user_confirmation": False}
         return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": [], "requires_user_confirmation": False}
