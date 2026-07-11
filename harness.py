@@ -337,6 +337,26 @@ def clause_kind(task: dict[str, Any]) -> str | None:
     return clause_kind_tier(task)[0]
 
 
+def effective_clause_kind(task: dict[str, Any]) -> str | None:
+    """판단에 실제 적용할 절 의도.
+
+    fb층 기본값 local(사전 밖 절의 최빈 의도 추정)은 절 '해석'이 아니라 '무지의
+    기본값'이다. record의 공유 경계가 외향(redacted*/dispatch_blocked)으로 명시돼
+    추정과 정면 모순이면, 약한 추정을 버리고 record 경로(경계 격자)에 맡긴다.
+    lex층(사전 매칭 절)과 fb층의 나머지 kind는 절 우선 절대 원칙 그대로 유지 —
+    이 예외는 '판독된 절 vs record'가 아니라 '무근거 기본값 vs 명시 record'의 충돌.
+    ⚠ fb층 중재는 서버 −0.010 전력(2026-07-08, fb:confirm→hold 13건 전패)이 있는
+    방향의 베팅이다. 단 그때는 판독된 kind(confirm)를 뒤집었고, 이번엔 무판독
+    기본값만 뒤집는다는 점이 다르다. 서버 음수면 이 함수를 clause_kind로 되돌릴 것.
+    """
+    kind, tier = clause_kind_tier(task)
+    if kind == "local" and tier == "fb":
+        boundary = str(record_map(records_of(task)).get("share_boundary_update", ""))
+        if boundary.startswith("redacted") or boundary.startswith("dispatch_blocked"):
+            return None
+    return kind
+
+
 def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
     """recall 상황에서 저장 프로필의 어느 필드가 수신처인지 도메인으로 정한다."""
     if recall.get("memory_class") == "prior_result":
@@ -578,7 +598,7 @@ class FinalHarness:
         attrs = focal.get("attrs") or {}
 
         # 1) "단, ..." 꼬리 정정이 가장 최신 지시: 내부 갱신 → memory_store, 확인/중지 → user.
-        kind = clause_kind(task)
+        kind = effective_clause_kind(task)
         if kind == "local":
             return "memory_store"
         if kind in ("stop", "confirm"):
@@ -630,8 +650,9 @@ class FinalHarness:
         # 0) "단, ..." 꼬리 정정이 최신 지시라 record 신호보다 우선한다.
         #    이 우선권은 신호 강도와 무관하게 절대적이다: fb층 confirm을 record의
         #    확정적 hold로 중재하는 실험은 서버 -0.010(전환 13건 전패)으로 반증됐다
-        #    (2026-07-08). 절이 있으면 절이 이긴다.
-        kind = clause_kind(task)
+        #    (2026-07-08). 절이 있으면 절이 이긴다. (유일한 예외: fb층 무판독 기본값
+        #    local이 외향 경계 record와 모순되는 경우 — effective_clause_kind 참조.)
+        kind = effective_clause_kind(task)
         if kind == "local":
             return "proceed"
         if kind == "stop":
@@ -794,7 +815,7 @@ class FinalHarness:
             return {"mode": "redacted", "allowed_fields": ["summary"], "excluded_fields": excluded or ["raw_quote"], "requires_user_confirmation": ambiguous}
 
         # proceed
-        target_is_local = "persistent_memory_write" in rec or clause_kind(task) == "local"
+        target_is_local = "persistent_memory_write" in rec or effective_clause_kind(task) == "local"
         if target_is_local or str(rec.get("share_boundary_update", "")).startswith("local_update"):
             # ⚠ personal_memory 제약 문장 → 제외 3종 규칙(dev 3/3)은 2026-07-09 묶음
             #   서버 음수에 포함되어 revert. 성분 미분해 — 재도전 시 단독 계측 필요.
@@ -806,7 +827,7 @@ class FinalHarness:
 
     def build_policy(self, task: dict[str, Any], focal: dict[str, Any], control: str, evidence: dict[str, Any], target: str = "") -> dict[str, Any]:
         rec = record_map(records_of(task))
-        kind = clause_kind(task)
+        kind = effective_clause_kind(task)
         flags: set[str] = set()
 
         if str(rec.get("session_share_policy", "")) == "strict":
@@ -856,7 +877,7 @@ class FinalHarness:
             ]
         if control == "ask":
             # 꼬리 정정("단, 확인") 기반이면 전제 변경 확인, record 기반이면 route 해석 확인.
-            if clause_kind(task) == "confirm":
+            if effective_clause_kind(task) == "confirm":
                 purpose, reason = "clarify_precondition", "precondition_changed"
             else:
                 purpose = reason = "route_resolution_required"
