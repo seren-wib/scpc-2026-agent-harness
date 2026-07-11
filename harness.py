@@ -324,9 +324,14 @@ def clause_kind_tier(task: dict[str, Any]) -> tuple[str | None, str | None]:
         return "confirm", "lex"
     # 마커는 잡혔는데 내용 어휘가 사전 밖이면 미분류로 흘리지 않는다. 느슨한 단서로
     # 의도를 추정하고, 꼬리 정정의 최빈 의도인 '내부 처리로 축소'(local)를 기본값으로 둔다.
-    if any(k in clause for k in ("중단", "멈추", "막아", "불가", "보류")):
+    # 어휘 확장 (2026-07-11 가족 단위 열람): 사전 밖 절의 실제 의미 템플릿에서
+    # local로 오추락하던 세 가족을 원리대로 재분류 —
+    #   '무너졌'(허용 근거 붕괴 = 무효화 단정의 소멸계 술어), '멈춘다'(활용형),
+    #   '차단'/'믿을 수 없'(중지 선언), 'clarification'(확인 요청의 영어 표기).
+    if any(k in clause for k in ("중단", "멈추", "멈춘", "막아", "차단", "불가", "보류",
+                                 "무너", "믿을 수 없")):
         return "stop", "fb"
-    if "확인" in clause or "물어" in clause:
+    if "확인" in clause or "물어" in clause or "clarification" in clause.lower():
         return "confirm", "fb"
     if any(k in clause for k in ("요약", "제외", "빼고")):
         return "scope", "fb"
