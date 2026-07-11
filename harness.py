@@ -725,6 +725,16 @@ class FinalHarness:
                     return "hold"
             if order == "boundary_after_authority":
                 return "ask"
+            # candidates가 최신 심판인 경우(screening 전용 어휘, dev 표본 0):
+            # authority-심판 법칙의 대칭 — 심판 record의 해소 여부가 결정한다.
+            # 후보가 단일/로컬뿐이면 route 해소 → 진행, 혼합/외부 잔존이면 미해소 → 대기.
+            # (2026-07-12 가족 열람 기반. 음수면 이 분기만 제거 — 격자 폴백으로 복귀)
+            if order == "candidates_after_authority":
+                snapshot_g = str(rec.get("route_candidate_snapshot", ""))
+                if "single" in snapshot_g or "local_candidate_only" in snapshot_g:
+                    return "proceed"
+                if snapshot_g:
+                    return "hold"
 
         # 5-3) 경계 격자 — record 경로의 생성기 구조 (dev record-path 4중주 21건 전수 일치):
         #      share_boundary_update 값이 기본 판정을 그대로 적어둔다.
