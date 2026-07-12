@@ -365,6 +365,31 @@ def clause_kind(task: dict[str, Any]) -> str | None:
     return clause_kind_tier(task)[0]
 
 
+# 절 문장 → 답안 excluded_fields 어휘. 절이 제외 대상을 직접 열거하는 경우의 매핑.
+CLAUSE_FIELD_NAMES = (
+    (("원문", "raw"), "raw_quote"),
+    (("위치", "장소"), "location"),
+    (("수치", "숫자"), "numeric_value"),
+    (("실명", "이름"), "name"),
+    (("주민", "rrn"), "rrn"),
+)
+
+
+def clause_named_fields(task: dict[str, Any]) -> list[str]:
+    """scope 절이 명시적으로 열거한 제외 필드 목록.
+
+    생성기는 절의 구체성을 payload에 그대로 옮긴다: 일반 문형("세부값 제외")의
+    dev gold는 [raw_quote]뿐이고, 명시 열거("원문·위치·수치는 제외")는 열거
+    집합이 곧 제외 목록이다. 오폭 방지를 위해 2개 이상 열거될 때만 인정한다
+    (1개 언급은 예시일 수 있음 — dev의 일반 문형과 구분이 안 선다).
+    """
+    clause = final_clause(task)
+    if not clause:
+        return []
+    named = [field for keywords, field in CLAUSE_FIELD_NAMES if any(k in clause for k in keywords)]
+    return sorted(named) if len(named) >= 2 else []
+
+
 def memory_field_for(task: dict[str, Any], recall: dict[str, Any]) -> str:
     """recall 상황에서 저장 프로필의 어느 필드가 수신처인지 도메인으로 정한다."""
     if recall.get("memory_class") == "prior_result":
@@ -825,7 +850,9 @@ class FinalHarness:
         if control == "ask":
             return {"mode": "summary", "allowed_fields": ["summary"], "excluded_fields": ["raw_quote"], "requires_user_confirmation": True}
         if control == "amend":
-            excluded = self.sensitive_fields_of(focal)
+            # 절이 제외 필드를 직접 열거하면 그 열거가 최신·최명시 지시다 (절 우선
+            # 원칙의 payload 버전). 아니면 focal의 민감 필드, 최후엔 raw_quote.
+            excluded = clause_named_fields(task) or self.sensitive_fields_of(focal)
             # 사용자 확인은 target 모호(누구에게 보낼지)일 때만 요구한다. focal 모호는
             # 시스템이 풀 문제라 확인 대상이 아니다 (dev 120/120 일치).
             ambiguous = "ambiguous_target" in rec
