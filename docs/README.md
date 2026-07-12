@@ -8,7 +8,9 @@
 ```
 docs/
 ├── README.md                     ← 지금 이 파일
-├── harness_architecture.md       ← harness.py 상세 구조 (판단 사다리·절 파서·템플릿)
+├── harness_architecture.md       ← harness.py 상세 구조 (판단 사다리·절 파서·경계 격자)
+├── harness_review.md             ← 판단 사다리 7단계 전수 리뷰 (2026-07-08 시점 스냅샷)
+├── 캠페인_회고_7일.md            ← 예선 7일 회고 (점수 여정·발견·교훈)
 ├── SCPC2026_Final_baseline.ipynb ← 공식 baseline 노트북. 셀 11 = 로컬 채점기 원본
 │                                    (score_local.py로 추출됨. PLAN_ARG 정규화 표도 여기)
 ├── 핸드북.md                     ← 공식 문서 5개 통합본. 규칙·제출·채점·task/answer 구조·
@@ -18,8 +20,10 @@ docs/
 └── data/
     ├── dev_tasks.jsonl           연습 task 120개 — 정답 공개, 자유 분석 가능
     ├── dev_answers.json          위 120개의 참조 정답 (계획 필드 key가 expected_events임에 주의)
-    ├── screening_tasks.jsonl     ★ 제출 대상 700개 — 내용 열람·분석 금지 (실격 조항.
-    │                                하네스의 답안 생성용 읽기와 출력 diff 개수 집계만 허용)
+    ├── screening_tasks.jsonl     ★ 제출 대상 700개 — 가족(템플릿) 단위 열람 + 일반화
+    │                                규칙 작성 허용 (2026-07-11 경계 재설정). 문항 단위
+    │                                규칙·수작업 답안표는 실격
+    ├── task-example.jsonl        task 구조 예시 1건 (dev final_dev_a553e284342b)
     ├── submission_schema.json    답안 JSON 스키마
     └── sample_submission.csv     제출 CSV 형식 예시
 ```
@@ -39,7 +43,7 @@ focal 정답 + target 또는 control 오답  →  scope/policy/plan 전부 0점
 ## 3. 절대 규칙 — 요약 (원문은 핸드북 2장)
 
 - 답안 생성은 제공된 FixedSLMClient + 자작 규칙 로직만. 외부 LLM/API 사용 = 실격
-- 평가 데이터(screening) 수작업 라벨링·패턴 분석·정답 추정 = 실격
+- screening은 가족 단위로 열람하되 **일반화 규칙만** 작성. 특정 문항 맞춤 예외·수작업 답안표·정답 추정 = 실격
 - task_id 하드코딩 = 무효. dev 문장 통암기 = 비공개 검증에서 자멸
 - 제출: submission.csv 1행 1컬럼, UTF-8, 하루 3회(5회에서 축소, 2026-07-07 공지), 최종 순위는 직접 선택한 파일 1개
 
