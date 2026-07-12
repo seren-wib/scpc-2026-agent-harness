@@ -927,8 +927,11 @@ class FinalHarness:
                 {"verb": "guard", "target": focal_id, "args": {"reason": "precondition_invalidated"}},
             ]
         if control == "ask":
-            # 꼬리 정정("단, 확인") 기반이면 전제 변경 확인, record 기반이면 route 해석 확인.
-            if clause_kind(task) == "confirm":
+            # 확인의 사유는 절이 아니라 공유 경계의 상태가 결정한다 (dev 26/26 전수 정합):
+            # 경계가 이미 갱신된 상태(local_update/redacted 계열)의 ask는 바뀐 전제를
+            # 묻는 것이고, 경계가 막혔거나 없는 ask는 수신처 해석을 묻는 것이다.
+            boundary = str(record_map(records_of(task)).get("share_boundary_update", ""))
+            if boundary.startswith("local_update") or boundary.startswith("redacted"):
                 purpose, reason = "clarify_precondition", "precondition_changed"
             else:
                 purpose = reason = "route_resolution_required"
