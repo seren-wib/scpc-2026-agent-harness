@@ -3,7 +3,7 @@
 > 대상 파일: `harness.py` (984 lines) · 최종 갱신: 2026-07-12 (예선 마감)
 > baseline 노트북(`docs/SCPC2026_Final_baseline.ipynb`)의 `FixedSLMClient`(셀 5)·`FinalHarness`(셀 7)를 그대로 추출한 단일 파일. 상위권 검증 제출 대상이라 파일을 분리하지 않고 유지한다.
 >
-> 이 문서는 최종 harness.py의 판단 사다리 전체를 서술한다. 각 규칙의 실측 근거·제출 이력·소거 기록은 저장소 루트 `CLAUDE.md`가, 7일 캠페인의 서사는 `docs/캠페인_회고_7일.md`가 원본이다. 행 번호는 근사값이며 코드 수정 시 밀린다.
+> 이 문서는 최종 harness.py의 판단 사다리 전체를 서술한다. 각 규칙의 실측 근거와 제출 이력은 [캠페인_회고_7일.md](캠페인_회고_7일.md)에 있다. 행 번호는 근사값이며 코드 수정 시 밀린다.
 
 ## 0. 한눈에 보기
 
@@ -53,7 +53,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 - `records_of(task)` / `objects_of(task)` — `device_state.records` / `device_state.objects` 배열 추출
 - `record_map(records)` — `{type: value}` 딕셔너리로 평탄화 (동일 type은 나중 값이 덮음)
-- `history_in_turn_order(task)` — `visible_history`를 `turn` 값으로 정렬. **배열 순서≠시간 순서**라는 핸드북 §5 경고에 따라 turn 오름차순으로 재정렬하고, turn 없는 항목은 최고참으로 취급
+- `history_in_turn_order(task)` — `visible_history`를 `turn` 값으로 정렬. **배열 순서≠시간 순서**라는 공식 스펙 §5 경고에 따라 turn 오름차순으로 재정렬하고, turn 없는 항목은 최고참으로 취급
 - `text_of(value)` / `object_text(obj)` — 임의 값을 검색 가능한 소문자 문자열로 직렬화
 
 이 6개 함수가 이후 모든 판단 로직의 입력 파이프라인이다.
@@ -116,7 +116,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 ## 4. "단, ..." 꼬리 절 파서 (235–287행)
 
-핸드북 상 가장 최신 지시로 취급되는 `단,`/`다만,` 꼬리 구절 처리. **이전 버전은 이 파서가 268개 케이스에서 실패해 -0.17 손실을 냈던 지점**(마커는 잡히는데 절 내용 어휘가 사전 밖 → `clause_kind`가 `None`으로 흘러 record 미끼로 오판됨).
+공식 스펙상 가장 최신 지시로 취급되는 `단,`/`다만,` 꼬리 구절 처리. **이전 버전은 이 파서가 268개 케이스에서 실패해 -0.17 손실을 냈던 지점**(마커는 잡히는데 절 내용 어휘가 사전 밖 → `clause_kind`가 `None`으로 흘러 record 미끼로 오판됨).
 
 - `final_clause(task)`: prompt 우선, 없으면 **최신 turn**의 history summary에서만 `단,`/`다만,` 마커 검색 (옛 턴의 절이 현재 턴을 납치하지 않도록 turn 필터링)
 - `clause_kind_tier(task)`: 절 텍스트를 (kind, 신뢰 층위) 쌍으로 판정. `clause_kind()`는 kind만 주는 래퍼.
@@ -210,7 +210,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 `risk_flags`를 재구성: strict_share_policy, target_ambiguity, ambiguous_focal, sensitive_content(민감 필드 존재), external_share(target이 memory_store/user가 아님), precondition_changed(share_boundary_update 존재), local_only(clause가 local/stop/confirm 또는 memory_write/local_update). control별 추가: hold→precondition_invalidated+safety, ask→clarification_required, amend→external_share+minimal_disclosure. `violations`는 hold일 때만 `["precondition_changed_ignored"]`.
 
 ### 7.3 `build_plan_events` (923–968행)
-control별 verb 시퀀스(핸드북 verb 어휘: read/clarify/guard/redact/dispatch/verify/update/summarize):
+control별 verb 시퀀스(공식 스펙 verb 어휘: read/clarify/guard/redact/dispatch/verify/update/summarize):
 
 - **hold**: `read`(invalidated_precondition) → `guard`(precondition_invalidated)
 - **ask**: `read`/`clarify`. purpose·reason은 **공유 경계 상태**가 결정한다 (절이 아님, dev 26/26): 경계가 갱신됨(local_update/redacted*)이면 `clarify_precondition`/`precondition_changed`(바뀐 전제를 물음), 경계가 막혔거나 없으면 `route_resolution_required`(수신처 해석을 물음).

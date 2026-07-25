@@ -58,9 +58,14 @@ dev_answers.json
 sample_submission.csv
 
 # --- 재배포 금지: 주최측 저작물 ---
-# 공식 문서 원문 5종 + 베이스라인 노트북 (규정 분쟁 근거용 로컬 보관, 공개 대상 아님)
+# 공식 문서 원문 5종 + 통합본 + 베이스라인 노트북 (로컬 보관, 공개 대상 아님)
 docs/원본/
+docs/핸드북.md
 docs/SCPC2026_Final_baseline.ipynb
+
+# --- 내부 작업 노트 (공개 대상 아님) ---
+CLAUDE.md
+docs/harness_review.md
 
 # --- 노트북 / 분석 부산물 ---
 .ipynb_checkpoints/
