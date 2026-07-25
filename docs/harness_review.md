@@ -55,7 +55,7 @@
 - **r6:same_place(SAME_PLACE_CUES)는 dev·screening 양쪽 질량 0 — 죽은 규칙.**
 - dev 무표본 + screening 질량: attrs_merchant 2 / attrs_target 1 / r8 폴백 3 — 합계 6건 소액.
 - **target 축의 실질 리스크 = 절 360건의 kind 추정** (fb-local 131 전부 memory_store행). kind 오추정 시 target+control 동시 오답 — 기존 kind 추정기 광맥과 동일 주소 재확인.
-- recall 가족은 screening 16건뿐 → **파트 0 수리 기대값 +0.004~0.006으로 하향 보정. 단독 발사 금지, 합승 전용.**
+- recall 가족은 screening 16건뿐 → **파트 0 수리 기대값 +0.004~0.006으로 하향 보정. 단독 제출 금지, 합승 전용.**
 
 ---
 
@@ -98,7 +98,7 @@ dev에서 both_recent record 보유 task 9건 중 절 없는 3건만 5-3 도달:
 
 ### dev 실측
 - policy<1.0 32건, 총손실 3.78유닛 = **-0.0041**. violations는 dev 전수 무결점.
-- **정정 (07-08)**: 초판의 "requires_confirmation 무결점"은 별도 집계 없이 단정한 오기. 후속 실측에서 14건 불일치 확인, 발 2에서 수리됨 (803행 `control=="ask"` 단순 등식이 원인). 리뷰 방법론 교훈: 채점기 컴포넌트는 셋 다 각각 세어야 함.
+- **정정 (07-08)**: 초판의 "requires_confirmation 무결점"은 별도 집계 없이 단정한 오기. 후속 실측에서 14건 불일치 확인, 제출 2에서 수리됨 (803행 `control=="ask"` 단순 등식이 원인). 리뷰 방법론 교훈: 채점기 컴포넌트는 셋 다 각각 세어야 함.
 - **`precondition_changed` 과잉 18건 — 전원 `share_boundary_update=dispatch_blocked_until_binding`에서 발생.** 대조군: gold가 이 플래그를 주는 boundary는 전부 redacted_external_boundary 또는 local_update_boundary.
 - → **785행 "boundary 존재 = 전제 변경"을 "boundary가 local_update/redacted_external 계열일 때만"으로 좁히면 18건 전부 해소.** dev 검증 완료된 무위험 수리 (의미도 정합: dispatch_blocked는 전제 '변경'이 아니라 '미결').
 - `sensitive_content` 결손 7건: focal contains에만 의존(779행) — gold는 record/scope 신호에서도 부여하는 듯. 채굴 여지.
@@ -120,7 +120,7 @@ dev에서 both_recent record 보유 task 9건 중 절 없는 3건만 5-3 도달:
 ## 파트 7: user_response
 
 - 고정 문장 5종. semantic 축(0.04)은 서버 전용 — 로컬 측정 불가.
-- 문장이 control·target·mode와 정합적, 구조적 결함 없음. 개선은 순수 탐사 영역(서버 델타로만 판독). 개선탄 무료 라이더 전용, 단독 발사 금지.
+- 문장이 control·target·mode와 정합적, 구조적 결함 없음. 개선은 순수 탐사 영역(서버 델타로만 해석). 개선안 무료 라이더 전용, 단독 제출 금지.
 
 ---
 
@@ -146,15 +146,15 @@ dev에서 both_recent record 보유 task 9건 중 절 없는 3건만 5-3 도달:
 - update_session_memory: last_evidence·TODO 잔재, 함수명 재고
 - fb_surv2 = idx-1 잔재 6건 (기존 Day 4 항목과 동일 주소)
 
-## 추기 — 발사 대차대조 (2026-07-08)
+## 추기 — 제출 대차대조 (2026-07-08)
 
-- #1 both_recent: **발사됨** (발 2, +0.0074 신기록 기여. 단 boundary∩order 교집합 판별 — 리뷰 원안인 boundary 단독은 dev diff 0 + screening +8건으로 별도 계측됨, 차기 합승 1순위)
-- #2 precondition_changed: **발사됨** (발 3 계류, 42/42)
-- #6 sensitive_content: **발사됨** (발 3, doctor_note 규칙 120/120)
-- 파트 6 ask plan reason: **발사됨** (발 3, 경계변경 판별자로 26/26 — 리뷰 제안보다 강한 형태)
-- #3 ask scope 분기: 미발사 — 리뷰의 후보 판별자로도 A-테이블이 안 갈림. 진짜 판별자 미발견
-- #4 stale-recall / #5 proceed 경계: 미발사
-- 서버 갭 산수: lawful 잔여 전부 합쳐 0.77~0.78 견고. 0.88은 fb-local 131건(이중 게이트) 도박의 적중 여부에 종속 — 이 문서의 지도 밖 광맥은 없음
+- #1 both_recent: **제출됨** (제출 2, +0.0074 신기록 기여. 단 boundary∩order 교집합 판별 — 리뷰 원안인 boundary 단독은 dev diff 0 + screening +8건으로 별도 계측됨, 차기 합승 1순위)
+- #2 precondition_changed: **제출됨** (제출 3 계류, 42/42)
+- #6 sensitive_content: **제출됨** (제출 3, doctor_note 규칙 120/120)
+- 파트 6 ask plan reason: **제출됨** (제출 3, 경계변경 판별자로 26/26 — 리뷰 제안보다 강한 형태)
+- #3 ask scope 분기: 미제출 — 리뷰의 후보 판별자로도 A-테이블이 안 갈림. 진짜 판별자 미발견
+- #4 stale-recall / #5 proceed 경계: 미제출
+- 서버 갭 산수: lawful 잔여 전부 합쳐 0.77~0.78 견고. 0.88은 fb-local 131건(이중 게이트) 도박의 정답 여부에 종속 — 이 문서의 지도 밖 광맥은 없음
 
 ## 리스크 재고 (수리 아님, 인지용)
 

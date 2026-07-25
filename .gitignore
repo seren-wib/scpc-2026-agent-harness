@@ -2,6 +2,14 @@
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+id_rsa*
+.netrc
+credentials.json
+kaggle.json
+dacon_token*
 
 # --- Virtual environments ---
 venv/
@@ -42,8 +50,39 @@ submission_*.csv
 probe*.csv
 docs/_archive/
 
+# --- 재배포 금지: 대회 배포 데이터 ---
+# task/answer 원본은 DACON 배포물. 로컬에만 두고 저장소엔 올리지 않는다.
+docs/data/
+*.jsonl
+dev_answers.json
+sample_submission.csv
+
+# --- 재배포 금지: 주최측 저작물 ---
+# 공식 문서 원문 5종 + 베이스라인 노트북 (규정 분쟁 근거용 로컬 보관, 공개 대상 아님)
+docs/원본/
+docs/SCPC2026_Final_baseline.ipynb
+
+# --- 노트북 / 분석 부산물 ---
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+/tmp_*
+scratch/
+
+# --- 로컬 전용 설정 ---
+.claude/settings.local.json
+
+# --- 백업 / 머지 잔재 ---
+*.bak
+*.orig
+*.rej
+*~
+
 # --- Editor / OS junk ---
 .vscode/
 .idea/
+*.swp
 .DS_Store
+._*
 Thumbs.db
+desktop.ini
+~$*

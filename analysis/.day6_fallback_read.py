@@ -1,7 +1,7 @@
 """폴백층 열람: 절 없음 + 격자/guardrail 미발화로 rung 7/8에 떨어지는 task들.
 
 가족: strict→amend / forbid(external_share_policy)→amend / else→proceed.
-프롬프트·힌트 템플릿 dedupe해서 의미 판독.
+프롬프트·힌트 템플릿 dedupe해서 의미 해석.
 """
 import json, re, sys
 from collections import Counter

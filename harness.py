@@ -242,7 +242,7 @@ CLAUSE_LOCAL = ("상태값만", "상태만 갱신", "상태만 바꾸", "상태�
                 "메모로만", "메모만 남", "기록만 남", "발송하지 말", "올리지 말",
                 "공개하지 말", "기기에서만", "단말에서만", "자체 처리",
                 # 커버리지 확장 v2 (2026-07-12): '내부 축소' 의미 공간을 변형 열거로 넓힘.
-                # 축약 매칭 금지(오폭 전력) — 변형은 전부 어절 단위로 나열한다.
+                # 축약 매칭 금지(오탐 전력) — 변형은 전부 어절 단위로 나열한다.
                 "상태 표시만", "내부의 상태", "기기 내부", "장치 내부", "로컬 처리", "로컬로만",
                 "내부 기록", "보내기는 접", "전송은 생략", "수신처 처리는 생략",
                 "공유 채널로 넘기는 대신", "전달은 생략", "발신하지 말", "외부 반출 없이",
@@ -257,7 +257,7 @@ CLAUSE_STOP = ("멈춰야", "막아야", "진행하면 안", "실행하면 안",
                "정지한다", "차단한다", "차단해야", "차단이 필요", "가로막", "제동",
                "그만둔다", "그만두어야", "보류한다", "보류해야")
 # ⚠ "처리할 수 없"은 stop 사전에 넣지 말 것: "확인하지 않으면 처리할 수 없다"처럼
-#    조건부 서술(= confirm 의미)에 오폭한다. 무조건 중지는 "진행할 수 없"까지만.
+#    조건부 서술(= confirm 의미)에 오탐한다. 무조건 중지는 "진행할 수 없"까지만.
 CLAUSE_CONFIRM = ("사용자에게 먼저 확인", "다시 확인", "먼저 확인", "확인해야 한다", "확인 전에는",
                   "미확정", "확인되지 않았", "결론을 내릴 수 없",
                   "재확인", "여부를 확인", "확실하지 않", "불명확", "판단할 수 없",
@@ -285,7 +285,7 @@ CLAUSE_MARKERS = ("단,", "다만,")
 INVALID_NOUNS = ("허용", "승인", "동의", "전제", "조건", "근거", "권한", "자격")
 INVALID_PREDS = ("무효", "취소되", "취소된", "철회", "깨졌", "깨진", "사라졌", "만료",
                  "상실", "효력을 잃", "유효하지 않", "더 이상 유효",
-                 # 커버리지 확장 v2: 붕괴·소멸 은유 계열 (fb '무너졌' 판독의 일반화)
+                 # 커버리지 확장 v2: 붕괴·소멸 은유 계열 (fb '무너졌' 해석의 일반화)
                  "무너졌", "무너진", "붕괴", "훼손", "소멸", "실효", "폐기",
                  "뒤집혔", "뒤집힌", "사라진", "사라져", "깨져", "부서졌",
                  "신뢰할 수 없", "믿을 수 없")
@@ -380,7 +380,7 @@ def clause_named_fields(task: dict[str, Any]) -> list[str]:
 
     생성기는 절의 구체성을 payload에 그대로 옮긴다: 일반 문형("세부값 제외")의
     dev gold는 [raw_quote]뿐이고, 명시 열거("원문·위치·수치는 제외")는 열거
-    집합이 곧 제외 목록이다. 오폭 방지를 위해 2개 이상 열거될 때만 인정한다
+    집합이 곧 제외 목록이다. 오탐 방지를 위해 2개 이상 열거될 때만 인정한다
     (1개 언급은 예시일 수 있음 — dev의 일반 문형과 구분이 안 선다).
     """
     clause = final_clause(task)
@@ -682,7 +682,7 @@ class FinalHarness:
     def decide_control(self, task: dict[str, Any], focal: dict[str, Any], target: str, evidence: dict[str, Any]) -> str:
         # 0) "단, ..." 꼬리 정정이 최신 지시라 record 신호보다 우선한다.
         #    이 우선권은 신호 강도와 무관하게 절대적이다: fb층 confirm을 record의
-        #    확정적 hold로 중재하는 실험은 서버 -0.010(전환 13건 전패)으로 반증됐다
+        #    확정적 hold로 중재하는 실험은 서버 -0.010(전환 13건 전부 오답)으로 반증됐다
         #    (2026-07-08). 절이 있으면 절이 이긴다.
         kind = clause_kind(task)
         if kind == "local":
@@ -752,7 +752,7 @@ class FinalHarness:
             return "ask"
         prompt = str(task.get("prompt", ""))
         # ⚠ '원본+익명' 프롬프트 규칙을 격자 L0/L1로 흡수하는 실험은 서버 음수(2026-07-10
-        #    발 3, 10건 중 ~7 오답 추정). 이 키워드는 표면 무늬가 아니라 실신호 — 프롬프트가
+        #    제출 3, 10건 중 ~7 오답 추정). 이 키워드는 표면 무늬가 아니라 실신호 — 프롬프트가
         #    익명화를 명시하면 order와 무관하게 local 진행이 정답. 유지할 것.
         if "원본" in prompt and "익명" in prompt and "local_update" in str(rec.get("share_boundary_update", "")):
             return "proceed"
@@ -761,7 +761,7 @@ class FinalHarness:
 
         # 5-2) guardrail 사다리: route_binding_order가 어느 record가 최신 심판인지 알려준다.
         #      authority가 최신이면 그 확정 여부가 결정하고, boundary가 최신이면 review 미결로 확인이 필요하다.
-        #      ⚠ boundary-최신 분기를 경계값으로 세분(blocked→hold)하는 실험도 같은 발 3
+        #      ⚠ boundary-최신 분기를 경계값으로 세분(blocked→hold)하는 실험도 같은 제출 3
         #      음수에 포함 — guard의 boundary-최신은 경계값 무관 blanket ask가 정답.
         authority = str(rec.get("dispatch_authority_check", ""))
         if "guardrail_ladder_signal" in rec and ("ambiguous_target" in rec or "ambiguous_focal" in rec):
@@ -776,7 +776,7 @@ class FinalHarness:
             # candidates가 최신 심판인 경우(screening 전용 어휘, dev 표본 0):
             # 심판 record가 미해소(혼합/외부 후보 잔존)면 dev 법칙(incomplete→hold)의
             # 대칭으로 hold. ⚠ 해소(단일/로컬) 셀을 proceed로 올리는 방향은 서버 실측
-            # 오답(2026-07-12 발 1, −0.0032 = proceed 13 오답·hold 9 적중 시그니처) —
+            # 오답(2026-07-12 제출 1, −0.0032 = proceed 13 오답·hold 9 정답 시그니처) —
             # 후보 수가 하나여도 target 모호(승인 채널 vs 표면 수신처)는 사용자 결정
             # 사안이라 풀리지 않는다. 해소 셀은 격자 폴백(ask)에 남긴다.
             if order == "candidates_after_authority":
@@ -805,7 +805,7 @@ class FinalHarness:
             severity = state + (1 if "ambiguous_target" in rec else 0)
             return ("proceed", "amend", "ask", "hold")[min(severity, 3)]
         # 경계 record가 아예 없는 both_recent: 판정이 안 적힌 target 모호는 확인이 기본
-        # (발 2 서버 검증 구성의 else-ask 유지 — 격자 도입으로 이 가족을 건드리지 않는다).
+        # (제출 2 서버 검증 구성의 else-ask 유지 — 격자 도입으로 이 가족을 건드리지 않는다).
         if str(rec.get("ambiguous_target", "")) == "surface_recipient_and_resolved_target_both_recent":
             return "ask"
         if any(t in types for t in ("amount_changed", "merchant_verification", "memory_conflict", "duration_ambiguous")):

@@ -1,4 +1,4 @@
-"""lex층 절 템플릿 전수 열람: dev 사전에 걸린 screening 절이 실제 그 의미인지 판독."""
+"""lex층 절 템플릿 전수 열람: dev 사전에 걸린 screening 절이 실제 그 의미인지 해석."""
 import re, sys
 from collections import Counter
 from pathlib import Path

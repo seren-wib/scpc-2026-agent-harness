@@ -1,4 +1,4 @@
-"""발 3 diff 계측: 0.7636 기준선(발 2) 대비 fb 절 재분류 70건. 귀속 확인."""
+"""제출 3 diff 계측: 0.7636 기준선(제출 2) 대비 fb 절 재분류 70건. 귀속 확인."""
 import csv, json, sys, re, subprocess
 from collections import Counter
 from pathlib import Path
@@ -12,8 +12,8 @@ def load_payload(p):
     rows = list(csv.reader(open(p, encoding="utf-8", newline="")))
     return json.loads(rows[1][0])["answers"]
 
-# 발 2(0.7636) 기준선: HEAD~5 즈음이 아니라 커밋 6c66806 시점 = 현재 코드에서 어휘 확장만 빼면 됨.
-# 간단히: git stash로 복원하는 대신, 저장해 둔 발 2 산출물이 없으므로 커밋에서 재생성.
+# 제출 2(0.7636) 기준선: HEAD~5 즈음이 아니라 커밋 6c66806 시점 = 현재 코드에서 어휘 확장만 빼면 됨.
+# 간단히: git stash로 복원하는 대신, 저장해 둔 제출 2 산출물이 없으므로 커밋에서 재생성.
 subprocess.run(["git", "stash"], check=True, capture_output=True)
 subprocess.run(["python3", "run.py", "screening"], check=True, capture_output=True)
 base = load_payload("submission.csv")

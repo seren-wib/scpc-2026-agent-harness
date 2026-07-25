@@ -1,4 +1,4 @@
-"""발 2 후보 diff 계측: 0.7634 기준선 vs scope 2종 수리. 귀속 확인 포함."""
+"""제출 2 후보 diff 계측: 0.7634 기준선 vs scope 2종 수리. 귀속 확인 포함."""
 import csv, json, sys
 from collections import Counter
 from pathlib import Path

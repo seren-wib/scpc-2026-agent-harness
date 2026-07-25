@@ -1,4 +1,4 @@
-"""Day 5 발 1 diff 계측: 기준선(HEAD 0.7634) vs fb:local 외향 42 플립.
+"""Day 5 제출 1 diff 계측: 기준선(HEAD 0.7634) vs fb:local 외향 42 플립.
 
 diff 질량과 키워드 귀속(⚠ 프로브 버그 전력 — 귀속 확인 전에 질량을 믿지 말 것),
 control/target 전환 내역을 집계한다. screening 개별 원문은 읽지 않는다(프로그램적 집계만).

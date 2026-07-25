@@ -1,6 +1,6 @@
-"""redacted_after_selection 가족 재판독: 무절 record-path 서브셋의 템플릿 열람.
+"""redacted_after_selection 가족 재해석: 무절 record-path 서브셋의 템플릿 열람.
 
-Day 4 발 2(+0.0005 혼조)가 격자 상태1로 편입한 가족 — 어느 셀이 틀렸는지 읽는다.
+Day 4 제출 2(+0.0005 혼조)가 격자 상태1로 편입한 가족 — 어느 셀이 틀렸는지 읽는다.
 """
 import re, sys
 from collections import Counter

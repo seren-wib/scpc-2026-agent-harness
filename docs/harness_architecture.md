@@ -3,7 +3,7 @@
 > 대상 파일: `harness.py` (984 lines) · 최종 갱신: 2026-07-12 (예선 마감)
 > baseline 노트북(`docs/SCPC2026_Final_baseline.ipynb`)의 `FixedSLMClient`(셀 5)·`FinalHarness`(셀 7)를 그대로 추출한 단일 파일. 상위권 검증 제출 대상이라 파일을 분리하지 않고 유지한다.
 >
-> 이 문서는 최종 harness.py의 판단 사다리 전체를 서술한다. 각 규칙의 실측 근거·발사 이력·소거 기록은 저장소 루트 `CLAUDE.md`가, 7일 캠페인의 서사는 `docs/캠페인_회고_7일.md`가 원본이다. 행 번호는 근사값이며 코드 수정 시 밀린다.
+> 이 문서는 최종 harness.py의 판단 사다리 전체를 서술한다. 각 규칙의 실측 근거·제출 이력·소거 기록은 저장소 루트 `CLAUDE.md`가, 7일 캠페인의 서사는 `docs/캠페인_회고_7일.md`가 원본이다. 행 번호는 근사값이며 코드 수정 시 밀린다.
 
 ## 0. 한눈에 보기
 
@@ -123,11 +123,11 @@ task/JSON 구조를 다루는 저수준 유틸리티.
   - **lex 층** (dev 검증된 강신호): `CLAUSE_LOCAL`→local, `CLAUSE_STOP` 또는 `clause_invalidated`(허용계 명사×소멸계 술어 공존, 불확실 표지 가드)→stop, `CLAUSE_SCOPE`→scope, `clause_prohibited`(행위 금지형, scope/말고 리다이렉트 거부권)→stop, `CLAUSE_CONFIRM`→confirm
   - **fb 층** (사전 밖 절의 느슨한 추정 — dev에 표본 0, screening에서만 발화): 중단/멈춤/차단/무너짐→stop, 확인/물어/clarification→confirm, 요약/제외/빼고→scope, **기본값 `"local"`** (꼬리 정정의 최빈 의도가 "내부 처리로 축소"이기 때문)
   - ⚠ 분기 귀속 실측(2026-07-07): screening 700 중 절 경로 432(61.7%), 그중 **fb층 284(40.6%)** — fb-default:local 131 / fb:confirm 81 / fb:scope 49 / fb:stop 23. dev는 전부 lex층이라 fb층 수정은 구조적으로 dev 무회귀.
-  - **어휘 사각 수리 (2026-07-12, 가족 단위 열람 후)**: fb-default:local 131 = 진짜 local 61 + 어휘 사각 오분류 70. 열람 후 판독으로 "무너졌"(무효화 술어)·"clarification"(영어)·"멈춘다"(활용형)·"차단"을 각 사전에 편입, 70건을 stop/confirm으로 재분류 (서버 +0.076). 이어 사전을 의미 공간 단위로 확장(활용형·차용어·은유 계열) — screening diff 0의 순수 일반화 강화(Hidden 대비).
+  - **어휘 사각 수리 (2026-07-12, 가족 단위 열람 후)**: fb-default:local 131 = 진짜 local 61 + 어휘 사각 오분류 70. 열람 후 해석으로 "무너졌"(무효화 술어)·"clarification"(영어)·"멈춘다"(활용형)·"차단"을 각 사전에 편입, 70건을 stop/confirm으로 재분류 (서버 +0.076). 이어 사전을 의미 공간 단위로 확장(활용형·차용어·은유 계열) — screening diff 0의 순수 일반화 강화(Hidden 대비).
 
 - **절 명시 열거 → 제외 필드** (`clause_named_fields`): scope 절이 제외 대상을 2개 이상 직접 열거하면("원문·위치·수치는 제외") 그 집합이 답안 excluded_fields가 된다. 일반 문형("세부값 제외")은 dev gold대로 [raw_quote]. 절 우선 원칙의 payload 버전.
 
-이 `clause_kind` 결과는 `infer_target`/`decide_control`/`build_policy`/`build_plan_events` 전부에서 최우선 분기로 쓰인다. **절 우선권은 신호 강도와 무관하게 절대적** — fb:confirm을 record hold로 중재하는 실험은 서버 −0.010(13건 전패, 2026-07-08)으로 반증되어 revert됐다. 절 kind vs record 우선순위는 확정 원칙으로 취급할 것.
+이 `clause_kind` 결과는 `infer_target`/`decide_control`/`build_policy`/`build_plan_events` 전부에서 최우선 분기로 쓰인다. **절 우선권은 신호 강도와 무관하게 절대적** — fb:confirm을 record hold로 중재하는 실험은 서버 −0.010(13건 전부 오답, 2026-07-08)으로 반증되어 revert됐다. 절 kind vs record 우선순위는 확정 원칙으로 취급할 것.
 
 ---
 

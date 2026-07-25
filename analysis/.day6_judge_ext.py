@@ -1,4 +1,4 @@
-"""발 2 양수-분기 후보 계측: snapshot-심판 원리를 guard 없는 record-path로 확장하면
+"""제출 2 양수-분기 후보 계측: snapshot-심판 원리를 guard 없는 record-path로 확장하면
 어느 격자 가족의 몇 건이 뒤집히나 (실제 수정 없이 시뮬레이션)."""
 import json, sys
 from collections import Counter
@@ -20,7 +20,7 @@ for t in tasks:
         continue
     guard = "guardrail_ladder_signal" in rec and ("ambiguous_target" in rec or "ambiguous_focal" in rec)
     if guard:
-        continue  # 이미 발 1이 처리
+        continue  # 이미 제출 1이 처리
     snap = str(rec.get("route_candidate_snapshot", ""))
     resolved = "single" in snap or "local_candidate_only" in snap
     b = str(rec.get("share_boundary_update", ""))
