@@ -1,7 +1,7 @@
 # harness.py 아키텍처
 
 > 대상 파일: `harness.py` (984 lines) · 최종 갱신: 2026-07-12 (예선 마감)
-> baseline 노트북(`docs/SCPC2026_Final_baseline.ipynb`)의 `FixedSLMClient`(셀 5)·`FinalHarness`(셀 7)를 그대로 추출한 단일 파일. 상위권 검증 제출 대상이라 파일을 분리하지 않고 유지한다.
+> 공식 baseline 노트북(저장소 미포함)의 `FixedSLMClient`·`FinalHarness`를 추출한 단일 파일. 검증 제출 대상이라 파일을 분리하지 않고 유지한다.
 >
 > 이 문서는 최종 harness.py의 판단 사다리 전체를 서술한다. 각 규칙의 실측 근거와 제출 이력은 [캠페인_회고_7일.md](캠페인_회고_7일.md)에 있다. 행 번호는 근사값이며 코드 수정 시 밀린다.
 
