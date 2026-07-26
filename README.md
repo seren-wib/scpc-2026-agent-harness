@@ -77,7 +77,7 @@ python3 run.py screening  # screening 700개 실행 + submission.csv 생성/왕�
 
 | 경로 | 역할 |
 |---|---|
-| [harness.py](harness.py) | 핵심 산출물. 판단 로직 전체가 이 단일 파일에 있다 |
+| [harness.py](harness.py) | 본 산출물. 판단 로직 전체가 이 단일 파일에 있다 |
 | [run.py](run.py) | 실행 스크립트. 검증 환경과 동일하게 session_id → turn_index 순으로 정렬해 호출 |
 | [score_local.py](score_local.py) | 로컬 채점기 (공식 baseline 노트북 셀 11 추출본) |
 | [make_probes.py](make_probes.py) | 진단용 프로브 생성기 (축별 정확도 역산에 사용) |
