@@ -47,7 +47,7 @@ answer dict (SUBMISSION_SCHEMA = "scpc.final.answer.v1")
 
 ---
 
-## 2. 데이터 접근 헬퍼 (57–110행)
+## 2. 데이터 접근 헬퍼 (57–111행)
 
 task/JSON 구조를 다루는 저수준 유틸리티.
 
@@ -72,7 +72,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 이 phase로 marker→ref_code→object 체인을 완성하면 반환, 실패하면 `None`으로 하위 단계에 넘긴다.
 
-### 3.2 `score_codes_in_summary` (155–232행) — history 문장 내 WM-code 점수화
+### 3.2 `score_codes_in_summary` (155–300행) — history 문장 내 WM-code 점수화
 정규식 `WM_CODE = [A-Z]{2,4}-\d{3,6}` 로 코드(WM-1234 등)를 찾고, 문장 내 위치 신호로 점수를 매긴다:
 
 | 신호 | 규칙 |
@@ -87,7 +87,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 문맥 창은 문장 경계(`.`)와 이웃 코드 경계에서 잘라 옆 후보 신호를 훔치지 않게 한다.
 
-### 3.3 `resolve_focal_by_history` (328–404행) — 1순위: history 기반 확정/승인 탐색
+### 3.3 `resolve_focal_by_history` (431–507행) — 1순위: history 기반 확정/승인 탐색
 최신 history summary부터 역순으로 `score_codes_in_summary` 적용:
 - 최고점 코드가 양수면 즉시 채택
 - 후보가 1개뿐이고 0점 이상이면 채택
@@ -100,7 +100,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
   5. prompt 토큰 겹침 최고점이 2등보다 확실히 높은 경우(token_pick)
   6. 그래도 없으면 구조적 사전확률: 생존 후보 중 **2번째**(dev 데이터 관찰 기반 휴리스틱)
 
-### 3.4 `FinalHarness.choose_focal` (457–524행) — 전체 우선순위 사다리
+### 3.4 `FinalHarness.choose_focal` (560–627행) — 전체 우선순위 사다리
 
 | 순서 | 조건 | 동작 |
 |---|---|---|
@@ -114,7 +114,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 ---
 
-## 4. "단, ..." 꼬리 절 파서 (235–287행)
+## 4. "단, ..." 꼬리 절 파서 (303–391행)
 
 공식 스펙상 가장 최신 지시로 취급되는 `단,`/`다만,` 꼬리 구절 처리. **이전 버전은 이 파서가 268개 케이스에서 실패해 -0.17 손실을 냈던 지점**(마커는 잡히는데 절 내용 어휘가 사전 밖 → `clause_kind`가 `None`으로 흘러 record 미끼로 오판됨).
 
@@ -131,7 +131,7 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 
 ---
 
-## 5. Target(수신처) 해석 — `infer_target` (526–577행)
+## 5. Target(수신처) 해석 — `infer_target` (629–680행)
 
 | 순서 | 조건 | 결과 |
 |---|---|---|
@@ -145,11 +145,11 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 | 7 | focal의 attrs(recipient/target/channel/app/merchant/name) | 그 값 |
 | 8 | 전부 실패 | 세션의 `last_target` 또는 `"user"` |
 
-`memory_field_for()`(290–308행)는 recall의 `memory_class`(prior_result→last_success_target, standing_constraint→approval_channel) 또는 record 타입(ops_memory_recall/enterprise_policy_recall), 아니면 prompt 도메인 키워드(조명/건강/승인)로 저장 프로필 필드명을 정한다.
+`memory_field_for()`(393–429행)는 recall의 `memory_class`(prior_result→last_success_target, standing_constraint→approval_channel) 또는 record 타입(ops_memory_recall/enterprise_policy_recall), 아니면 prompt 도메인 키워드(조명/건강/승인)로 저장 프로필 필드명을 정한다.
 
 ---
 
-## 6. Control(진행 방침) 결정 — `decide_control` (682행) / `record_control` (698–830행)
+## 6. Control(진행 방침) 결정 — `decide_control` (682행) / `record_control` (698–837행)
 
 4값 상태 머신: `proceed` / `ask` / `hold` / `amend`. `decide_control`은 절이 있으면 절로 즉결(0단)하고, 없으면 `record_control` 사다리로 넘긴다. 사다리는 우선순위 순서대로 첫 매치가 결정한다.
 
@@ -206,8 +206,10 @@ task/JSON 구조를 다루는 저수준 유틸리티.
 - **status_only excluded**: 내부 갱신이라도 strict가 아니면 focal이 담은 민감 필드는 제외한다 (dev 44/44).
 - `sensitive_fields_of`(839–842행)는 focal의 `attrs.contains` 목록을 `SENSITIVE_FIELD_MAP`(raw_quote/rrn/name/location/numeric_value·amount/doctor_note/card_number)으로 변환.
 
-### 7.2 `build_policy` (722–758행)
+### 7.2 `build_policy` (879–921행)
 `risk_flags`를 재구성: strict_share_policy, target_ambiguity, ambiguous_focal, sensitive_content(민감 필드 존재), external_share(target이 memory_store/user가 아님), precondition_changed(share_boundary_update 존재), local_only(clause가 local/stop/confirm 또는 memory_write/local_update). control별 추가: hold→precondition_invalidated+safety, ask→clarification_required, amend→external_share+minimal_disclosure. `violations`는 hold일 때만 `["precondition_changed_ignored"]`.
+
+`requires_confirmation`은 **사용자 결정 대기**의 의미 신호다: `ask` 자체이거나, proceed/amend 중이라도 `ambiguous_target`(누구에게 보낼지) 또는 `user_binding_pending`(사용자 바인딩 대기)이 걸린 경우 True. focal 모호와 시스템측 미결(authority_incomplete)은 확인 대상이 아니며, hold는 항상 False다 (dev 120/120 일치).
 
 ### 7.3 `build_plan_events` (923–968행)
 control별 verb 시퀀스(공식 스펙 verb 어휘: read/clarify/guard/redact/dispatch/verify/update/summarize):
@@ -219,12 +221,12 @@ control별 verb 시퀀스(공식 스펙 verb 어휘: read/clarify/guard/redact/d
 - **proceed & mode=raw**: `read`(inspect_context) → `dispatch`(scope=raw)
 - **proceed & 기타(summary)**: `read` → `summarize` → `dispatch`(scope=summary)
 
-### 7.4 `user_response` (804–813행)
-control/scope 조합을 4가지 고정 문장 템플릿으로 매핑(hold/ask/amend/status_only/기본 진행 문구).
+### 7.4 `user_response` (970–984행)
+control/scope 조합을 6가지 고정 문장 템플릿으로 매핑한다: hold(전제 무효 보류) → ask(수신처·범위 미확정, 먼저 확인) → amend(세부값 제외 요약 공유) → mode=status_only(외부 공유 없이 내부 상태만 갱신) → mode=raw(원문 그대로 공유) → 기본(요약 전달). 앞의 셋은 control이, 뒤의 셋은 scope mode가 고른다. 문장 어휘는 dev 생성기의 표현 빈도에 정렬돼 있다.
 
 ---
 
-## 8. `FinalHarness` 클래스 전체 흐름 (407–443행)
+## 8. `FinalHarness` 클래스 전체 흐름 (510–546행)
 
 ```python
 class FinalHarness:
